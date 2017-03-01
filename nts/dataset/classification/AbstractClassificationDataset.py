@@ -11,6 +11,11 @@ class AbstractClassificationDataset(AbstractDataset):
 
     # Overriding abstract method
     def evaluate(self, gold, predictions):
+        """
+        :param gold: an iterable of the gold standard or correct data.
+        :param predictions: an iterable of a model's predictions.
+        :return: tuple - a triple of floats, (prec, recall, f1)
+        """
         super(AbstractClassificationDataset, self).evaluate(gold, predictions)
         precision, recall, fscore, _ = \
             precision_recall_fscore_support(gold, predictions,

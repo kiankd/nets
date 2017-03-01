@@ -1,5 +1,8 @@
 from abc import ABCMeta, abstractmethod
+from copy import deepcopy
 import numpy as np
+import random
+
 
 class AbstractDataset(object):
     """
@@ -25,11 +28,11 @@ class AbstractDataset(object):
     # Initializes the essential components of a dataset as attributes.
     def __init__(self):
         self._train_x = None
-        self._train_y =  None
+        self._train_y = None
         self._val_x = None
-        self._val_y =  None
+        self._val_y = None
         self._test_x = None
-        self._test_y =  None
+        self._test_y = None
         self.dataset_name = ''
 
 
@@ -42,6 +45,29 @@ class AbstractDataset(object):
 
     def get_test_x(self):
         return self._test_x
+
+    def iterate_train_minibatches(self, batchsize, shuffle=False):
+        """
+        Iterates minibatches, used mostly only by neural networks.
+
+        :param batchsize: int - designates size of batch
+        :param shuffle: bool - optional, says whether or not randomized shuffle.
+        :return: tuple - yielded subset of the training data as a minibatch.
+        """
+        # Copy the train data so there is no problems later.
+        x, y = deepcopy(self.get_train_data())
+
+        # Shuffle the data, if desired.
+        if shuffle:
+            c = list(zip(x, y))
+            random.shuffle(c)
+            x, y = zip(*c)
+
+        # Iterate. Note that we may cut off some samples by rounding down.
+        for i in xrange(len(x) / batchsize):
+            start = i * batchsize
+            end = (i+1) * batchsize
+            yield x[start:end], y[start:end]
 
 
     # Evaluation methods.
@@ -85,8 +111,8 @@ class AbstractDataset(object):
         :return: string - a string of our results.
         """
         assert len(gold) == len(predictions),\
-            'Different number of gold samples than predicted! %d vs %d.'%(
-                len(gold), len(predictions))
+            'Different number of samples than predictions! {} vs {}'\
+                .format(len(gold), len(predictions))
 
     def _results_analysis(self, model_applied, data_subset_name, gold, preds):
         """
@@ -106,10 +132,10 @@ class AbstractDataset(object):
 
         header = 'Model {} got the following results on dataset {} - {}\n\n.'\
                  .format(model_applied, self.dataset_name, data_subset_name)
-        analysis = self._generate_results_report(gold, predictions)
+        analysis = self._generate_results_report(gold, preds)
         full_report = ''.join([header, analysis])
 
-        # TODO:
+        # TODO: serialize results.
         """
         Serialize the results into a results directory. We want this results
         directory to be very explicit about which model obtained the results
@@ -118,7 +144,6 @@ class AbstractDataset(object):
         the directory location of that config file.
         """
         return full_report
-
 
     def train_results_analysis(self, model_applied, train_pred):
         return self._results_analysis(model_applied, 'TRAINING SET',
@@ -155,8 +180,8 @@ class AbstractDataset(object):
     def __load_data(self, file_name):
         if file_name:
             x, y = self._load_data_from_file(file_name)
-            assert len(x) == len(y),\
-                'Different number of samples than labels! %d vs %d'%(len(x), len(y))
+            assert len(x) == len(y),'Different number of samples than labels!' \
+                                    ' {} vs {}'.format(len(x), len(y))
             return x, y
         else:
             return None, None
