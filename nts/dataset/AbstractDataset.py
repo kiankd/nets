@@ -30,7 +30,7 @@ class AbstractDataset(object):
         self._val_y =  None
         self._test_x = None
         self._test_y =  None
-        dataset_name = ''
+        self.dataset_name = ''
 
 
     # Getter methods.
@@ -48,6 +48,10 @@ class AbstractDataset(object):
     @abstractmethod
     def evaluate(self, gold, predictions):
         """
+        Evaluate results according to a metric specified in the subclass.
+        This is for quick and easy overview of results without getting into
+        detail of the specifics of performance.
+
         :param gold: an iterable of the gold standard or correct data.
         :param predictions: an iterable of a model's predictions.
         :return: dict - our results dictionary which will be results for each
@@ -58,14 +62,75 @@ class AbstractDataset(object):
             'Different number of gold samples than predicted! %d vs %d.'%(
                 len(gold), len(predictions))
 
-    def evaluate_train_predictions(self, predictions):
-        return self.evaluate(self._train_y, predictions)
+    def evaluate_train_predictions(self, train_pred):
+        return self.evaluate(self._train_y, train_pred)
 
-    def evaluate_val_predictions(self, predictions):
-        return self.evaluate(self._val_y, predictions)
+    def evaluate_val_predictions(self, val_pred):
+        return self.evaluate(self._val_y, val_pred)
 
-    def evaluate_test_predictions(self, predictions):
-        return self.evaluate(self._test_y, predictions)
+    def evaluate_test_predictions(self, test_pred):
+        return self.evaluate(self._test_y, test_pred)
+
+    @abstractmethod
+    def _generate_results_report(self, gold, predictions):
+        """
+        This is for generating a detailed report on the results obtained by
+        a model on this dataset. For classification this is trivial since it
+        just calls sklearn's "classification_report". The aim is to provide
+        detailed results analysis and serialization of the report in order to
+        ensure complete clarity in which model obtained which results.
+
+        :param gold: an iterable of the gold standard or correct data.
+        :param predictions: an iterable of a model's predictions.
+        :return: string - a string of our results.
+        """
+        assert len(gold) == len(predictions),\
+            'Different number of gold samples than predicted! %d vs %d.'%(
+                len(gold), len(predictions))
+
+    def _results_analysis(self, model_applied, data_subset_name, gold, preds):
+        """
+        This is an abstraction for the functions below since they would have
+        almost the same header string for each data subset the model would be
+        applied to.
+
+        :param model_applied: string - denotes the name of the model applied to
+        obtain these results. This may be an actual path to the model's config
+        file in order to ensure absolute clarity in exactly what model with
+        what parameters obtained these results.
+        :param data_subset_name: string - simple string to denote data subset.
+        :param gold: an iterable of the gold standard or correct data.
+        :param preds: an iterable of a model's predictions.
+        :return: string - a full results report.
+        """
+
+        header = 'Model {} got the following results on dataset {} - {}\n\n.'\
+                 .format(model_applied, self.dataset_name, data_subset_name)
+        analysis = self._generate_results_report(gold, predictions)
+        full_report = ''.join([header, analysis])
+
+        # TODO:
+        """
+        Serialize the results into a results directory. We want this results
+        directory to be very explicit about which model obtained the results
+        in the report. The best way to do this would be to have a model config
+        file for each model applied, where the 'model_applied' variable denotes
+        the directory location of that config file.
+        """
+        return full_report
+
+
+    def train_results_analysis(self, model_applied, train_pred):
+        return self._results_analysis(model_applied, 'TRAINING SET',
+                                      self._train_y, train_pred)
+
+    def val_results_analysis(self, model_applied, val_pred):
+        return self._results_analysis(model_applied, 'VALIDATION SET',
+                                      self._val_y, val_pred)
+
+    def test_results_analysis(self, model_applied, test_pred):
+        return self._results_analysis(model_applied, 'TEST SET',
+                                      self._test_y, test_pred)
 
 
     # Initialization and data loading.
@@ -87,7 +152,7 @@ class AbstractDataset(object):
         # Otherwise the extending class has to implement the data loading.
         pass
 
-    def load_data(self, file_name):
+    def __load_data(self, file_name):
         if file_name:
             x, y = self._load_data_from_file(file_name)
             assert len(x) == len(y),\
@@ -97,18 +162,18 @@ class AbstractDataset(object):
             return None, None
 
     def load_all_data(self, train_fname, val_fname='', test_fname=''):
-        self._train_x, self._train_y = self.load_data(train_fname)
-        self._val_x, self._val_y = self.load_data(val_fname)
-        self._test_x, self._test_y = self.load_data(test_fname)
+        self._train_x, self._train_y = self.__load_data(train_fname)
+        self._val_x, self._val_y = self.__load_data(val_fname)
+        self._test_x, self._test_y = self.__load_data(test_fname)
 
 
     # Data serialization - we use numpy save.
-    def serialize_data(self, file_name, x, y):
+    def __serialize_data(self, file_name, x, y):
         if file_name:
             np.save(file_name, np.array([x, y]))
 
     def serialize_all_data(self, train_fname, val_fname='', test_fname=''):
-        self.serialize_data(train_fname, self._train_x, self._train_y)
-        self.serialize_data(val_fname, self._val_x, self._val_y)
-        self.serialize_data(test_fname, self._test_x, self._test_y)
+        self.__serialize_data(train_fname, self._train_x, self._train_y)
+        self.__serialize_data(val_fname, self._val_x, self._val_y)
+        self.__serialize_data(test_fname, self._test_x, self._test_y)
 
