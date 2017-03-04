@@ -1,5 +1,7 @@
+from nts import PROJECT_BASE_DIR
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import random
 
@@ -25,6 +27,9 @@ class AbstractDataset(object):
     # Makes the class abstract.
     __metaclass__ = ABCMeta
 
+    # Static constants.
+    RAW_DATASETS_DIR = PROJECT_BASE_DIR + 'raw_datasets/'
+
     # Initializes the essential components of a dataset as attributes.
     def __init__(self):
         self._train_x = None
@@ -49,7 +54,6 @@ class AbstractDataset(object):
     def iterate_train_minibatches(self, batchsize, shuffle=False):
         """
         Iterates minibatches, used mostly only by neural networks.
-
         :param batchsize: int - designates size of batch
         :param shuffle: bool - optional, says whether or not randomized shuffle.
         :return: tuple - yielded subset of the training data as a minibatch.
@@ -192,13 +196,46 @@ class AbstractDataset(object):
         self._test_x, self._test_y = self.__load_data(test_fname)
 
 
+    # Transformation methods.
+    @staticmethod
+    def class_transform(y_class):
+        """
+        Transforms y sample string encoding into an integer.
+        :param y_class: string - designates the class of a sample.
+        :return: int - a transformed version of the input.
+        """
+        return int(y_class)
+
+    @staticmethod
+    def sample_transform(sample_vec):
+        """
+        Transforms input string feature vector into a float feature vector.
+        :param sample_vec: iterable of strings
+        :return: iterable of floats
+        """
+        return map(float, sample_vec)
+
+    def get_normalized_data(self, get_val=True, get_test=True):
+        """
+        Normalizes the train, val, and test set data according to the structure
+        of the training set data. Returns a 3-tuple.
+        :param get_val: bool
+        :param get_test: bool
+        :return: 3-tuple of xtrain, xval, xtest
+        """
+        s = StandardScaler()
+        new_train = s.fit_transform(self.get_train_data()[0])
+        new_val = s.transform(self.get_val_x()) if get_val else None
+        new_test = s.transform(self.get_test_x()) if get_test else None
+        return new_train, new_val, new_test
+
     # Data serialization - we use numpy save.
     def __serialize_data(self, file_name, x, y):
         if file_name:
             np.save(file_name, np.array([x, y]))
 
-    def serialize_all_data(self, train_fname, val_fname='', test_fname=''):
-        self.__serialize_data(train_fname, self._train_x, self._train_y)
-        self.__serialize_data(val_fname, self._val_x, self._val_y)
-        self.__serialize_data(test_fname, self._test_x, self._test_y)
+    def serialize_all_data(self, path, train_fname, val_fname='', test_fname=''):
+        self.__serialize_data(path + train_fname, self._train_x, self._train_y)
+        self.__serialize_data(path + val_fname, self._val_x, self._val_y)
+        self.__serialize_data(path + test_fname, self._test_x, self._test_y)
 
