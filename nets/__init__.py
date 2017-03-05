@@ -1,4 +1,4 @@
-PROJECT_BASE_DIR = '~/projects/nts/'
+PROJECT_BASE_DIR = '~/projects/nets/'
 
 
 from dataset.abstract_dataset import AbstractDataset

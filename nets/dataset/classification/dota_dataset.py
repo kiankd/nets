@@ -1,4 +1,4 @@
-from nts import AbstractClassificationDataset
+from nets import AbstractClassificationDataset
 import numpy as np
 import csv
 

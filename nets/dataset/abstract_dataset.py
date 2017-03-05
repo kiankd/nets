@@ -1,4 +1,4 @@
-from nts import PROJECT_BASE_DIR
+from nets import PROJECT_BASE_DIR
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from sklearn.preprocessing import StandardScaler

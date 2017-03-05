@@ -1,5 +1,5 @@
 from abc import ABCMeta
-from nts import AbstractDataset
+from nets import AbstractDataset
 from sklearn.metrics import classification_report, \
     precision_recall_fscore_support
 
