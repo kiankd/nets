@@ -1,6 +1,6 @@
-PROJECT_BASE_DIR = '~/projects/nets/'
+# Some base variables to help out.
+PROJECT_BASE_DIR = '/Users/kian/projects/nets/'
 
-
+# Helper imports below.
 from dataset.abstract_dataset import AbstractDataset
-from dataset.classification.abstract_classification_dataset import *
-from dataset.clustering.abstract_clustering_dataset import *
+from model.abstract_model import AbstractModel

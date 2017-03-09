@@ -93,12 +93,21 @@ class AbstractDataset(object):
                 len(gold), len(predictions))
 
     def evaluate_train_predictions(self, train_pred):
+        """
+        Returns a triple of precision, recall, f1.
+        """
         return self.evaluate(self._train_y, train_pred)
 
     def evaluate_val_predictions(self, val_pred):
+        """
+        Returns a triple of precision, recall, f1.
+        """
         return self.evaluate(self._val_y, val_pred)
 
     def evaluate_test_predictions(self, test_pred):
+        """
+        Returns a triple of precision, recall, f1.
+        """
         return self.evaluate(self._test_y, test_pred)
 
     @abstractmethod
@@ -134,7 +143,7 @@ class AbstractDataset(object):
         :return: string - a full results report.
         """
 
-        header = 'Model {} got the following results on dataset {} - {}\n\n.'\
+        header = 'Model {} got the following results on dataset {} - {}:\n\n'\
                  .format(model_applied, self.dataset_name, data_subset_name)
         analysis = self._generate_results_report(gold, preds)
         full_report = ''.join([header, analysis])
@@ -174,12 +183,12 @@ class AbstractDataset(object):
         :return: x matrix of sample data, y vector of classes/clusters.
         """
         # Numpy data is all the same.
-        if file_name.endswith('.npy'):
-            data = np.load(file_name)
-            return data[0], data[1]
+        if file_name.endswith('.npz'):
+            data = np.load(self.get_path() + file_name)
+            return data['x'], data['y']
 
         # Otherwise the extending class has to implement the data loading.
-        pass
+        return None, None
 
     def __load_data(self, file_name):
         if file_name:
@@ -191,14 +200,47 @@ class AbstractDataset(object):
             return None, None
 
     def load_all_data(self, train_fname, val_fname='', test_fname=''):
+        """
+        Loads all data, note that only the filename, not the path, is needed.
+        """
         self._train_x, self._train_y = self.__load_data(train_fname)
         self._val_x, self._val_y = self.__load_data(val_fname)
         self._test_x, self._test_y = self.__load_data(test_fname)
 
+    @abstractmethod
+    def default_load(self):
+        pass
+
+    def split_train_into_val(self, proportion=0.2, random_seed=1871):
+        """
+        If there is no validation set, split one off from the training set
+         such that it is either of equal size to the test set or is 1/5 of the
+         training set, whichever takes less data away from training.
+        """
+        assert (self._val_x is None and self._train_x is not None), \
+            'Error - attempting to make validation set when it already exists!'
+
+        # choose the proportion of data we will be taking from train set.
+        prop_of_test_set = len(self._test_x) / float(len(self._train_x))
+        proportion = min(proportion, prop_of_test_set)
+        items_in_val = int(proportion * len(self._train_x))
+
+        # seed and split away train set data into the val.
+        random.seed(random_seed)
+        indicies = range(len(self._train_x))
+        random.shuffle(indicies)
+
+        # set them
+        new_train_x = self._train_x[indicies[items_in_val:]]
+        new_train_y = self._train_y[indicies[items_in_val:]]
+        val_x = self._train_x[indicies[:items_in_val]]
+        val_y = self._train_y[indicies[:items_in_val]]
+
+        self._train_x, self._train_y = new_train_x, new_train_y
+        self._val_x, self._val_y = val_x, val_y
 
     # Transformation methods.
-    @staticmethod
-    def class_transform(y_class):
+    def class_transform(self, y_class):
         """
         Transforms y sample string encoding into an integer.
         :param y_class: string - designates the class of a sample.
@@ -206,8 +248,7 @@ class AbstractDataset(object):
         """
         return int(y_class)
 
-    @staticmethod
-    def sample_transform(sample_vec):
+    def sample_transform(self, sample_vec):
         """
         Transforms input string feature vector into a float feature vector.
         :param sample_vec: iterable of strings
@@ -230,11 +271,16 @@ class AbstractDataset(object):
         return new_train, new_val, new_test
 
     # Data serialization - we use numpy save.
+    @abstractmethod
+    def get_path(self):
+        pass
+
     def __serialize_data(self, file_name, x, y):
         if file_name:
-            np.save(file_name, np.array([x, y]))
+            np.savez(file_name, x=x, y=y)
 
-    def serialize_all_data(self, path, train_fname, val_fname='', test_fname=''):
+    def serialize_all_data(self, train_fname, val_fname='', test_fname=''):
+        path = self.get_path()
         self.__serialize_data(path + train_fname, self._train_x, self._train_y)
         self.__serialize_data(path + val_fname, self._val_x, self._val_y)
         self.__serialize_data(path + test_fname, self._test_x, self._test_y)

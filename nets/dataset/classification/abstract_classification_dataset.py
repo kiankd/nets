@@ -3,7 +3,6 @@ from nets import AbstractDataset
 from sklearn.metrics import classification_report, \
     precision_recall_fscore_support
 
-
 class AbstractClassificationDataset(AbstractDataset):
 
     # Makes the class abstract.
@@ -24,6 +23,7 @@ class AbstractClassificationDataset(AbstractDataset):
 
     # Overriding abstract method
     def _generate_results_report(self, gold, predictions):
-        super(AbstractClassificationDataset, self)._generate_results_report()
+        super(AbstractClassificationDataset, self)._generate_results_report(
+            gold, predictions)
         return classification_report(gold, predictions, digits=3)
 
