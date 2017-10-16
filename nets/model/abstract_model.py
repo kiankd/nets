@@ -11,7 +11,6 @@ class AbstractModel(object):
     # Makes the class abstract.
     __metaclass__ = ABCMeta
 
-
     def __init__(self, name, hyperparameters=None):
         self.model_name = name
         self.params = hyperparameters
@@ -34,7 +33,7 @@ class AbstractModel(object):
         :return: string
         """
         s = ['Model name: ', self.model_name, '\n']
-        for key,value in self.params.iteritems():
+        for key, value in self.params.iteritems():
             s.append('\t{} : {}\n'.format(key, str(value)))
         s.append('\n')
         return ''.join(s)
@@ -50,7 +49,7 @@ class AbstractModel(object):
         :return: bool - whether or not this is a default setting
         """
 
-        #TODO: ensure that this is not called when overridden!
+        # TODO: ensure that this is not called when overridden!
         return False
 
     @abstractmethod

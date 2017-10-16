@@ -3,6 +3,7 @@ from nets.model.sklearn_model import SKLearnModel
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC, LinearSVC
 
+# TODO: test these not with the dota dataset.
 
 def test_model():
     d = DotaDataset()

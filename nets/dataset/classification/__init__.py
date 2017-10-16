@@ -1,2 +1,3 @@
 from abstract_classification_dataset import AbstractClassificationDataset
-from dota_dataset import DotaDataset
+from dota_dataset_DEPRECATED import DotaDataset
+from synthetic_dataset import SyntheticDataset

@@ -2,6 +2,7 @@ from nets import PROJECT_BASE_DIR
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, KFold
 import numpy as np
 import random
 
@@ -42,8 +43,14 @@ class AbstractDataset(object):
 
 
     # Getter methods.
+    def get_train_x(self):
+        return self._train_x
+
+    def get_train_y(self):
+        return self._train_y
+
     def get_train_data(self):
-        return self._train_x, self._train_y
+        return self.get_train_x(), self.get_train_y()
 
     def get_val_x(self):
         return self._val_x
@@ -58,6 +65,9 @@ class AbstractDataset(object):
         :param shuffle: bool - optional, says whether or not randomized shuffle.
         :return: tuple - yielded subset of the training data as a minibatch.
         """
+        # TODO: verify that we probably don't need to copy - will be expensive.
+        # ... Alternatively, if we copy, then continuously iterate over the
+        # MBs until a stop condition is reached; e.g. number of epochs.
         # Copy the train data so there is no problems later.
         x, y = deepcopy(self.get_train_data())
 
@@ -73,6 +83,36 @@ class AbstractDataset(object):
             end = (i+1) * batchsize
             yield x[start:end], y[start:end]
 
+    def iterate_cross_validation(self, k_folds=5, merge_train_val=False, normalize=False, random_seed=1917,
+                                 verbose=True):
+        """
+        :param k_folds: int - designates number of folds for cross validation
+        :param merge_train_val: bool - designates whether we should merge train
+        and validation sets for testing
+        :param normalize: bool - normalize data according to train statistics, if true
+        :param random_seed: bool - set the random seed for CV, if None then no shuffle
+        :param verbose: bool - print output to std-out
+        :return: yields tuples (train_k_x, train_k_y, val_k_x, val_k_y)
+        """
+        kf = KFold(n_splits=k_folds, shuffle=not random_seed is None, random_state=random_seed)
+        x = self._train_x + self._val_x if merge_train_val else self._train_x
+        y = self._train_y + self._val_y if merge_train_val else self._train_y
+        kf.get_n_splits(x)
+
+        fold = 1
+        for train_idx, val_idx in kf.split(x):
+            if verbose: print('Currently testing fold {}...'.format(fold))
+            x_train = x[train_idx]
+            x_val = x[val_idx]
+
+            if normalize:
+                if verbose: print('\tNormalizing fold data...')
+                s = StandardScaler()
+                x_train = s.fit_transform(x_train)
+                x_val = s.transform(x_val)
+
+            fold += 1
+            yield x_train, y[train_idx], x_val, y[val_idx]
 
     # Evaluation methods.
     @abstractmethod
@@ -87,7 +127,6 @@ class AbstractDataset(object):
         :return: dict - our results dictionary which will be results for each
                         metric being measured by the extending class.
         """
-
         assert len(gold) == len(predictions),\
             'Different number of gold samples than predicted! %d vs %d.'%(
                 len(gold), len(predictions))
@@ -213,28 +252,11 @@ class AbstractDataset(object):
 
     def split_train_into_val(self, proportion=0.2, random_seed=1871):
         """
-        If there is no validation set, split one off from the training set
-         such that it is either of equal size to the test set or is 1/5 of the
-         training set, whichever takes less data away from training.
+        Split validation set off from the training set according to proportion.
         """
-        assert (self._val_x is None and self._train_x is not None), \
-            'Error - attempting to make validation set when it already exists!'
-
-        # choose the proportion of data we will be taking from train set.
-        prop_of_test_set = len(self._test_x) / float(len(self._train_x))
-        proportion = min(proportion, prop_of_test_set)
-        items_in_val = int(proportion * len(self._train_x))
-
-        # seed and split away train set data into the val.
-        random.seed(random_seed)
-        indicies = range(len(self._train_x))
-        random.shuffle(indicies)
-
-        # set them
-        new_train_x = self._train_x[indicies[items_in_val:]]
-        new_train_y = self._train_y[indicies[items_in_val:]]
-        val_x = self._train_x[indicies[:items_in_val]]
-        val_y = self._train_y[indicies[:items_in_val]]
+        new_train_x, val_x, new_train_y, val_y = \
+            train_test_split(self._train_x, self._train_y,
+                             test_size=proportion, shuffle=True, random_state=random_seed)
 
         self._train_x, self._train_y = new_train_x, new_train_y
         self._val_x, self._val_y = val_x, val_y
@@ -256,18 +278,26 @@ class AbstractDataset(object):
         """
         return map(float, sample_vec)
 
-    def get_normalized_data(self, get_val=True, get_test=True):
+    def get_normalized_data(self, get_val=True, get_test=True, reset_internals=False):
         """
         Normalizes the train, val, and test set data according to the structure
         of the training set data. Returns a 3-tuple.
         :param get_val: bool
         :param get_test: bool
+        :param reset_internals: bool - if set to true it will reset all of the internal
+        data to be the new normalized data
         :return: 3-tuple of xtrain, xval, xtest
         """
         s = StandardScaler()
-        new_train = s.fit_transform(self.get_train_data()[0])
+        new_train = s.fit_transform(self.get_train_x())
         new_val = s.transform(self.get_val_x()) if get_val else None
         new_test = s.transform(self.get_test_x()) if get_test else None
+
+        if reset_internals:
+            self._train_x = new_train
+            self._val_x = new_val
+            self._test_x = new_test
+
         return new_train, new_val, new_test
 
     # Data serialization - we use numpy save.

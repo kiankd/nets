@@ -2,7 +2,10 @@ from nets.dataset.classification import AbstractClassificationDataset
 import numpy as np
 import csv
 
-
+"""
+This class is only for my own development of the architecture for this software.
+It is not an interesting task (I don't think...).
+"""
 class DotaDataset(AbstractClassificationDataset):
 
     # Overriding abstract method.

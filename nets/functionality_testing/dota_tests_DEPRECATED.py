@@ -1,4 +1,4 @@
-from nets.dataset.classification.dota_dataset import DotaDataset
+from nets.dataset.classification.dota_dataset_DEPRECATED import DotaDataset
 
 def dota_to_numpy():
     d = DotaDataset()

@@ -4,6 +4,8 @@ import numpy as np
 """
 This script contains the default initialization parameters for a neural
 network. It also builds a neural network based on parameters passed.
+
+DEPRECATE - Theano is getting destroyed --> MUST SWITCH TO TENSOR FLOW
 """
 
 DEFAULT_NEURAL_CONFIG = {
