@@ -24,7 +24,6 @@ class AbstractDataset(object):
     This assumption also means that we assume all data is separated into three
     files, one for train, validation, and testing.
     """
-
     # Makes the class abstract.
     __metaclass__ = ABCMeta
 

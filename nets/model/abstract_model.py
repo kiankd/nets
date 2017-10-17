@@ -7,7 +7,6 @@ class AbstractModel(object):
     that are held common to all ML models. Models are initialized with a name
     and an optional set of hyperparameters, which is a dictionary.
     """
-
     # Makes the class abstract.
     __metaclass__ = ABCMeta
 
