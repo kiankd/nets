@@ -53,8 +53,7 @@ class AbstractModel(object):
 
     @abstractmethod
     def train(self, x, y):
-        assert len(x) == len(y),'Different number of samples than classes! ' \
-                                '{} vs {}'.format(len(x), len(y))
+        pass
 
     @abstractmethod
     def predict(self, x):

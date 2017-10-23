@@ -1,5 +1,5 @@
 # Some base variables to help out.
-PROJECT_BASE_DIR = '/Users/kian/projects/nets/'
+PROJECT_BASE_DIR = '/home/ml/kkenyo1/nets/nets/'
 
 # Helper imports below.
 from dataset.abstract_dataset import AbstractDataset

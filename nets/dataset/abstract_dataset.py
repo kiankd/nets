@@ -40,7 +40,6 @@ class AbstractDataset(object):
         self._test_y = None
         self.dataset_name = ''
 
-
     # Getter methods.
     def get_train_x(self):
         return self._train_x
@@ -54,13 +53,39 @@ class AbstractDataset(object):
     def get_val_x(self):
         return self._val_x
 
+    def get_val_y(self):
+        return self._val_y
+
     def get_test_x(self):
         return self._test_x
 
-    def iterate_train_minibatches(self, batchsize, shuffle=False):
+    def get_data_statistics(self):
+        print('Statistics for dataset {}...'.format(self.dataset_name))
+        for x, y, name in self.iter_all_data():
+            unique_labels = set(y)
+            print('Dataset is {}:'.format(name))
+            print('\tX data is encoded as {}, with x[0] {}'.format(type(x), type(x[0])))
+            print('\tY data is encoded as {}, with y[0] {}'.format(type(y), type(x[y])))
+            print('\t- Number of unique labels: {}'.format(len(unique_labels)))
+            print('\t- Total number of samples: {}'.format(len(x)))
+            for label in unique_labels:
+                l_count = len(y[y == label])
+                print('\t- Total number of samples with label = {}: {}'.format(label, l_count))
+            print('\t- Sample example samples:')
+            for i in range(0, 5):
+                print('\t\tSample {}: x=\"{}\", y=\"{}\"'.format(i, x[i], y[i]))
+            print('')
+
+    def iter_all_data(self):
+        yield self._train_x, self._train_y, 'Training set'
+        yield self._val_x, self._val_y, 'Validation set'
+        yield self._test_x, self._test_y, 'Testing set'
+
+    def iterate_train_minibatches(self, batchsize, epochs, shuffle=True):
         """
         Iterates minibatches, used mostly only by neural networks.
-        :param batchsize: int - designates size of batch
+        :param batchsize: int - designates size of batch.
+        :param epochs: int - number of epochs to train for.
         :param shuffle: bool - optional, says whether or not randomized shuffle.
         :return: tuple - yielded subset of the training data as a minibatch.
         """
@@ -70,17 +95,18 @@ class AbstractDataset(object):
         # Copy the train data so there is no problems later.
         x, y = deepcopy(self.get_train_data())
 
-        # Shuffle the data, if desired.
-        if shuffle:
-            c = list(zip(x, y))
-            random.shuffle(c)
-            x, y = zip(*c)
+        for e in range(epochs):
+            # Shuffle the data.
+            if shuffle:
+                c = list(zip(x, y))
+                random.shuffle(c)
+                x, y = zip(*c)
 
-        # Iterate. Note that we may cut off some samples by rounding down.
-        for i in xrange(len(x) / batchsize):
-            start = i * batchsize
-            end = (i+1) * batchsize
-            yield x[start:end], y[start:end]
+            # Iterate. Note that we cut off samples by rounding down.
+            for i in xrange(len(x) / batchsize):
+                start = i * batchsize
+                end = (i+1) * batchsize
+                yield x[start:end], y[start:end], e
 
     def iterate_cross_validation(self, k_folds=5, merge_train_val=False, normalize=False, random_seed=1917,
                                  verbose=True):
@@ -222,7 +248,10 @@ class AbstractDataset(object):
         """
         # Numpy data is all the same.
         if file_name.endswith('.npz'):
-            data = np.load(self.get_path() + file_name)
+            try:
+                data = np.load(self.get_path() + file_name)
+            except IOError:
+                data = np.load(file_name)
             return data['x'], data['y']
 
         # Otherwise the extending class has to implement the data loading.
@@ -237,13 +266,14 @@ class AbstractDataset(object):
         else:
             return None, None
 
-    def load_all_data(self, train_fname, val_fname='', test_fname=''):
+    def load_all_data(self, train_fname, val_fname='', test_fname='', get_path=False):
         """
-        Loads all data, note that only the filename, not the path, is needed.
+        Loads all data.
         """
-        self._train_x, self._train_y = self.__load_data(train_fname)
-        self._val_x, self._val_y = self.__load_data(val_fname)
-        self._test_x, self._test_y = self.__load_data(test_fname)
+        path = self.get_path() if get_path else ''
+        self._train_x, self._train_y = self.__load_data(path + train_fname)
+        self._val_x, self._val_y = self.__load_data(path + val_fname)
+        self._test_x, self._test_y = self.__load_data(path + test_fname)
 
     @abstractmethod
     def default_load(self):
