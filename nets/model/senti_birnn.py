@@ -5,7 +5,7 @@ import torch.optim as optim
 import numpy as np
 from nets import AbstractModel
 from collections import OrderedDict, Counter
-from torch.nn.utils import rnn
+from itertools import izip
 from torch.autograd import Variable
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 
@@ -15,14 +15,14 @@ def random_word_emb(dim):
 
 def iter_accs():
     yield 'Accuracy', accuracy_score
-    # yield 'Recall',recall_score
-    # yield 'Precision',precision_score
-    # yield 'F1',f1_score
+    # yield 'Recall', recall_score
+    # yield 'Precision', precision_score
+    # yield 'F1', f1_score
 
-def clip_gradient(model, clip):
+def clip_gradient(parameters, clip):
     """Computes a gradient clipping coefficient based on gradient norm."""
     totalnorm = 0
-    for p in model.parameters():
+    for p in parameters:
         modulenorm = p.grad.data.norm()
         totalnorm += modulenorm ** 2
     totalnorm = np.sqrt(totalnorm)
@@ -33,7 +33,7 @@ class SentiBiRNN(AbstractModel):
     UNK = '*UNKNOWN*'
 
     def __init__(self, name, vocabulary, embedding_dim, encoder_hidden_dim, dense_hidden_dim,
-                 labels, dropout, batch_size, learning_rate=0.01, clip_norm=0,
+                 labels, dropout, batch_size, weight_decay=1e-3, learning_rate=1e-2, clip_norm=0,
                  hyperparameters=None, emb_dict=None):
 
         super(SentiBiRNN, self).__init__(name, hyperparameters)
@@ -64,13 +64,17 @@ class SentiBiRNN(AbstractModel):
         # init loss function and optimizer
         self.clip_norm = clip_norm
         self.loss_function = nn.CrossEntropyLoss()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-3)
+        self.optimizer = optim.RMSprop(self.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        # self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     def get_word_idx(self, word):
         try:
             return self.word_to_idx[word]
         except KeyError:
             return self.word_to_idx[self.UNK]
+
+    def parameters(self):
+        return filter(lambda p: p.requires_grad, self.model.parameters())
 
     def prepare_sequences(self, seq_batch, cuda=True):
         seq_batch = [[self.get_word_idx(word) for word in seq] for seq in seq_batch]
@@ -100,18 +104,13 @@ class SentiBiRNN(AbstractModel):
             return outs.cuda()
         return outs
 
-        # outputs = [torch.LongTensor([label]) for label in labels]
-        # if cuda:
-        #     outputs = [output.cuda() for output in outputs]
-        # return map(lambda out: Variable(out, volatile=evalu), outputs)
-
     def predict(self, x, cuda=True):
         super(SentiBiRNN, self).predict(x)
         self.model.init_hiddens(len(x)) # init for big batch input
         return self.model(*self.prepare_sequences(x, cuda=cuda))
 
-    def predict_loss_and_acc(self, x, gold, cuda=True):
-        preds = self.predict(x)
+    def predict_with_stats(self, x, gold, cuda=True):
+        preds = self.predict(x, cuda=cuda)
         golds = self.prepare_labels(gold, cuda=cuda, evalu=True)
         loss = self.loss_function(preds, golds)
 
@@ -119,9 +118,12 @@ class SentiBiRNN(AbstractModel):
         golds = golds.data.type(torch.DoubleTensor).numpy()
 
         output = np.argmax(preds, axis=1)
+
+        mean_pred_label_conf = np.mean(preds[preds>0.5], axis=0) # e.g., avg. conf for l=0 is 0.6, l=1 is 0.4
         return loss, \
                self.get_accuracy(output, golds), \
-               dict(Counter(list(output)))
+               dict(Counter(list(output))), \
+               {i: mean_pred_label_conf[i] for i in range(len(mean_pred_label_conf))}
 
     @staticmethod
     def get_accuracy(output, golds):
@@ -149,12 +151,28 @@ class SentiBiRNN(AbstractModel):
 
         # Step 4 - optional grad clips
         if self.clip_norm > 0:
-            coeff = clip_gradient(self.model, self.clip_norm)
-            for p in self.model.parameters():
+            coeff = clip_gradient(self.parameters(), self.clip_norm)
+            for p in self.parameters():
                 p.grad.mul_(coeff)
 
         self.optimizer.step()
 
+    def get_w_norm(self):
+        norm = 0
+        for param in self.parameters():
+            norm += torch.norm(param)
+        return norm.data[0]
+
+    def get_grad_norm(self):
+        norm = 0
+        for param in self.parameters():
+            try:
+                norm += param.grad.data.norm()
+            except AttributeError:
+                norm += 0
+        if norm == 0:
+            return 'No Grad...'
+        return norm
 
 # This is our RNN!
 class EncoderRNN(nn.Module):
@@ -167,7 +185,9 @@ class EncoderRNN(nn.Module):
         # initialize word embedding table
         self.word_embeddings = nn.Embedding(vocab_size, embedding_dim)
         if pretrained_emb is not None:
+            print('Using pretrained word embeddings...')
             self.word_embeddings.weight.data.copy_(torch.from_numpy(pretrained_emb))
+        self.word_embeddings.weight.requires_grad = False
 
         # initialize hidden state h0, diff for forward and backward
         self.hidden_dim = rnn_hidden_dim
@@ -184,9 +204,8 @@ class EncoderRNN(nn.Module):
 
         # figure out to do minibatches
         self.dense_to_pred_layers = nn.Sequential(OrderedDict([
-            ('nonlin1', nn.Tanh()),
             ('dense1', nn.Linear(dense_input_size, dense_hidden_dim)),
-            ('nonlin2', nn.Tanh()), # nonlinearity, probs relu is best
+            ('nonlin1', nn.Tanh()), # nonlinearity, probs relu is best
             ('drop-global1', self.drop), # dropout from main dense layer
             ('dense2', nn.Linear(dense_hidden_dim, num_classes,)),
             ('softmax', nn.Softmax()),
@@ -208,6 +227,14 @@ class EncoderRNN(nn.Module):
         max_len = sorted_lens[0]
         emb_seq_list = [self.word_embeddings(seq) for seq in sorted_seqs]
 
+        # make length mask, may be able to make more efficient in future
+        mask = np.array([[1 if i<l else 0 for i in range(max_len)] for l in sorted_lens])
+        mask = Variable(torch.FloatTensor(mask))
+        minus_mask = 1 - mask
+
+        mask = mask.detach().cuda()
+        minus_mask = minus_mask.detach().cuda()
+
         # fucking bullshit that pytorch doesn't come with this
         def pad(tensor, length):
             inc = max_len - length # how much padding we need
@@ -215,14 +242,18 @@ class EncoderRNN(nn.Module):
             return F.pad(d2_input, (0, 0, inc, 0)).view(max_len, self.embsz) # pad and bring back
 
         # map the padding to the input
-        padded_emb_seqs = [pad(seq, crtlen) for seq, crtlen in zip(emb_seq_list, sorted_lens)]
+        padded_emb_seqs = [pad(seq, crtlen) for seq, crtlen in izip(emb_seq_list, sorted_lens)]
         padded_embs = torch.stack(padded_emb_seqs)
 
         # prop through the bi-rnn
         hf = self.hidden_f
         hb = self.hidden_b
         for i in range(max_len):
-            hf = self.rnn_f(padded_embs[:,i,:], hf) # start at beginning of seq
-            hb = self.rnn_b(padded_embs[:,-1-i,:], hb) # "" end of seq
+            hf = (mask[:,i].unsqueeze(1) * self.rnn_f(padded_embs[:,i,:], hf)) + \
+                 (minus_mask[:,i].unsqueeze(1) * hf)
+            hb = (mask[:,-1-i].unsqueeze(1) * self.rnn_b(padded_embs[:,-1-i,:], hb)) + \
+                 (minus_mask[:,-1-i].unsqueeze(1) * hb)
+
         rep = torch.cat([hf, hb], 1)
+
         return self.dense_to_pred_layers(rep)

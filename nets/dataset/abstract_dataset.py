@@ -92,7 +92,7 @@ class AbstractDataset(object):
         # TODO: verify that we probably don't need to copy - will be expensive.
         # ... Alternatively, if we copy, then continuously iterate over the
         # MBs until a stop condition is reached; e.g. number of epochs.
-        x, y = deepcopy(self.get_train_data())
+        x, y = self.get_train_data()
 
         for e in range(epochs):
             # Shuffle the data.

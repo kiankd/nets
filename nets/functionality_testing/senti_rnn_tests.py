@@ -11,8 +11,8 @@ import numpy as np
 def run_model_tests():
     # load data and get embedding
     print('Data loading test...')
-    emb_size = 50
-    batch_size = 40
+    emb_size = 200
+    batch_size = 100
 
     dataset = SentimentDataset()
     dataset.default_load(dataset_name='rt')
@@ -24,12 +24,13 @@ def run_model_tests():
         'Sentiment bi-directional RNN - 1',
         vocabulary=glove_vocab,
         embedding_dim=emb_size,
-        encoder_hidden_dim=75,
-        dense_hidden_dim=125,
+        encoder_hidden_dim=32,
+        dense_hidden_dim=32,
         labels=[0, 1],
         dropout=0,
-        clip_norm=5,
-        learning_rate=1e-3,
+        clip_norm=1,
+        weight_decay=0,
+        learning_rate=1e-4,
         batch_size=batch_size,
         emb_dict=glove_embeddings,
     )
@@ -43,23 +44,32 @@ def run_model_tests():
 
     print('Testing minibatch iteration...')
     i = -1
-    for samples, labels, epoch in dataset.iterate_train_minibatches(batchsize=batch_size, epochs=100):
+    for samples, labels, epoch in dataset.iterate_train_minibatches(batchsize=batch_size, epochs=100, shuffle=True):
         if epoch > i:
-            train_loss, train_accs, t_out_dist = nets_model.predict_loss_and_acc(dataset.get_train_x(), dataset.get_train_y())
-            val_loss, val_accs, v_out_dist = nets_model.predict_loss_and_acc(dataset.get_val_x(), dataset.get_val_y())
-            print('\nEpoch {} results:'.format(epoch))
+            train_loss, train_accs, t_out_dist, t_mean_outs = \
+                nets_model.predict_with_stats(dataset.get_train_x(), dataset.get_train_y())
 
+            val_loss, val_accs, v_out_dist, v_mean_outs = \
+                nets_model.predict_with_stats(dataset.get_val_x(), dataset.get_val_y())
+
+            print('\nEpoch {} results:'.format(epoch))
+            print('  Norm W    : {:>5}'.format(nets_model.get_w_norm()))
+            print('  Norm Grad : {:>5}'.format(nets_model.get_grad_norm()))
             print('  Train loss: {:>5}'.format(train_loss.data[0]))
             print('  Val loss  : {:>5}'.format(val_loss.data[0]))
+
             print('  Train Accuracies:')
             for name, acc in train_accs:
                 print('    {:<10}:  {:>5}'.format(name, acc))
             print('    Out dist  :  {}'.format(t_out_dist))
+            print('    Mean outs :  {}'.format(t_mean_outs))
 
             print('  Val Accuracies:')
             for name, acc in val_accs:
                 print('    {:<10}:  {:>5}'.format(name, acc))
             print('    Out dist  :  {}'.format(v_out_dist))
+            print('    Mean outs :  {}'.format(v_mean_outs))
+
 
             i += 1
         nets_model.train(samples, labels, batch_size=batch_size)

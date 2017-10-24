@@ -2,12 +2,13 @@ from nets.dataset.classification.sentiment_dataset import SentimentDataset
 from sklearn.model_selection import train_test_split
 import csv
 
-def test_senti_data_extraction():
+def test_senti_data_extraction(wemb_dim, get_gloves=False):
     d = SentimentDataset()
     d.default_load(dataset_name='rt')
     d.get_vocabulary()
-    d.init_glove_for_vocab() # call to get new gloves
-    d.get_glove_data()
+    if get_gloves:
+        d.init_glove_for_vocab(dim=wemb_dim) # call to get new gloves
+    d.get_glove_data(dim=wemb_dim)
     sample_emb = d.embeddings['the']
     print('Sanity check: embedding dimension = {}'.format(len(sample_emb)))
     print('Number of embeddings: {}'.format(len(d.embeddings)))
@@ -59,5 +60,5 @@ def convert_rt_polarity_to_tsv_and_split():
 
 if __name__ == '__main__':
     # convert_rt_polarity_to_tsv_and_split() # this rewrites all the data!
-    test_senti_data_extraction()
+    test_senti_data_extraction(wemb_dim=200, get_gloves=False)
 
