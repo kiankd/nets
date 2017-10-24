@@ -4,20 +4,37 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from nets import AbstractModel
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 from torch.nn.utils import rnn
 from torch.autograd import Variable
+from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 
 np.random.seed(1)
 def random_word_emb(dim):
     return 0.2 * np.random.uniform(-1.0, 1.0, dim)
+
+def iter_accs():
+    yield 'Accuracy', accuracy_score
+    # yield 'Recall',recall_score
+    # yield 'Precision',precision_score
+    # yield 'F1',f1_score
+
+def clip_gradient(model, clip):
+    """Computes a gradient clipping coefficient based on gradient norm."""
+    totalnorm = 0
+    for p in model.parameters():
+        modulenorm = p.grad.data.norm()
+        totalnorm += modulenorm ** 2
+    totalnorm = np.sqrt(totalnorm)
+    return min(1, clip / (totalnorm + 1e-6))
 
 # Wrapper class over our abstract model paradigm.
 class SentiBiRNN(AbstractModel):
     UNK = '*UNKNOWN*'
 
     def __init__(self, name, vocabulary, embedding_dim, encoder_hidden_dim, dense_hidden_dim,
-                 labels, dropout, batch_size, learning_rate=0.01, hyperparameters=None, emb_dict=None):
+                 labels, dropout, batch_size, learning_rate=0.01, clip_norm=0,
+                 hyperparameters=None, emb_dict=None):
 
         super(SentiBiRNN, self).__init__(name, hyperparameters)
 
@@ -45,6 +62,7 @@ class SentiBiRNN(AbstractModel):
         )
 
         # init loss function and optimizer
+        self.clip_norm = clip_norm
         self.loss_function = nn.CrossEntropyLoss()
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=1e-3)
 
@@ -94,13 +112,24 @@ class SentiBiRNN(AbstractModel):
 
     def predict_loss_and_acc(self, x, gold, cuda=True):
         preds = self.predict(x)
-        gold_labels = self.prepare_labels(gold, cuda=cuda, evalu=True)
-        return self.loss_function(preds, gold_labels)
+        golds = self.prepare_labels(gold, cuda=cuda, evalu=True)
+        loss = self.loss_function(preds, golds)
+
+        preds = preds.data.type(torch.DoubleTensor).numpy()
+        golds = golds.data.type(torch.DoubleTensor).numpy()
+
+        output = np.argmax(preds, axis=1)
+        return loss, \
+               self.get_accuracy(output, golds), \
+               dict(Counter(list(output)))
+
+    @staticmethod
+    def get_accuracy(output, golds):
+        return [(name, f(golds,output)) for name, f in iter_accs()]
 
     def train(self, x, y, batch_size=-1, reset=True, cuda=True):
         """
-        This function will train our RNN model.
-        TODO: allow for mini-batch input! Now it only takes one sample at a time!
+        This function will train our RNN model over a minibatch.
         """
         super(SentiBiRNN, self).train(x, y)
         # Step 1, clear out the history of the gradient from previous sample,
@@ -110,7 +139,6 @@ class SentiBiRNN(AbstractModel):
             self.model.init_hiddens(batch_size)
 
         # Step 2, prepare input variables.
-        # seqs = [self.prepare_sequence(wseq) for wseq in x] # may need this for mbatch functionality
         seqs, lens = self.prepare_sequences(x, cuda)
         targets = self.prepare_labels(y, cuda)
 
@@ -118,6 +146,13 @@ class SentiBiRNN(AbstractModel):
         outputs = self.model.forward(seqs, lens)
         loss = self.loss_function(outputs, targets)
         loss.backward()
+
+        # Step 4 - optional grad clips
+        if self.clip_norm > 0:
+            coeff = clip_gradient(self.model, self.clip_norm)
+            for p in self.model.parameters():
+                p.grad.mul_(coeff)
+
         self.optimizer.step()
 
 
@@ -149,8 +184,9 @@ class EncoderRNN(nn.Module):
 
         # figure out to do minibatches
         self.dense_to_pred_layers = nn.Sequential(OrderedDict([
+            ('nonlin1', nn.Tanh()),
             ('dense1', nn.Linear(dense_input_size, dense_hidden_dim)),
-            ('relu1', nn.ReLU()), # nonlinearity, probs relu is best
+            ('nonlin2', nn.Tanh()), # nonlinearity, probs relu is best
             ('drop-global1', self.drop), # dropout from main dense layer
             ('dense2', nn.Linear(dense_hidden_dim, num_classes,)),
             ('softmax', nn.Softmax()),
