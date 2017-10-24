@@ -12,6 +12,8 @@ def run_model_tests():
     # load data and get embedding
     print('Data loading test...')
     emb_size = 50
+    batch_size = 100
+
     dataset = SentimentDataset()
     dataset.default_load(dataset_name='rt')
     glove_embeddings = dataset.get_glove_data(dim=emb_size)
@@ -27,6 +29,7 @@ def run_model_tests():
         labels=[0, 1],
         dropout=0,
         learning_rate=1e-3,
+        batch_size=batch_size,
         emb_dict=glove_embeddings,
     )
 
@@ -39,16 +42,16 @@ def run_model_tests():
 
     print('Testing minibatch iteration...')
     i = -1
-    for sample, label, epoch in dataset.iterate_train_minibatches(batchsize=1, epochs=10):
+    for samples, labels, epoch in dataset.iterate_train_minibatches(batchsize=batch_size, epochs=10):
         if epoch > i:
             train_loss = nets_model.predict_loss_and_acc(dataset.get_train_x(), dataset.get_train_y())
             val_loss = nets_model.predict_loss_and_acc(dataset.get_val_x(), dataset.get_val_y())
             print('\nEpoch {} results:'.format(epoch))
-            print('\tTrain loss: {}'.format(train_loss))
-            print('\tVal loss:   {}'.format(val_loss))
+            print('\tTrain loss: {}'.format(train_loss.data[0]))
+            print('\tVal loss:   {}'.format(val_loss.data[0]))
             i += 1
+        nets_model.train(samples, labels, batch_size=batch_size)
 
-        nets_model.train(sample[0], label[0])
 
 if __name__ == '__main__':
     run_model_tests()
