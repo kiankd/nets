@@ -64,8 +64,8 @@ class SentiBiRNN(AbstractModel):
         # init loss function and optimizer
         self.clip_norm = clip_norm
         self.loss_function = nn.CrossEntropyLoss()
-        self.optimizer = optim.RMSprop(self.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        # self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        # self.optimizer = optim.RMSprop(self.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     def get_word_idx(self, word):
         try:
@@ -78,24 +78,11 @@ class SentiBiRNN(AbstractModel):
 
     def prepare_sequences(self, seq_batch, cuda=True):
         seq_batch = [[self.get_word_idx(word) for word in seq] for seq in seq_batch]
-        seq_batch = list(reversed(sorted(seq_batch, key=lambda l: len(l))))
         lengths = list(map(len, seq_batch))
-        seq_batch = [Variable(torch.LongTensor(x)) for x in seq_batch]
+        seq_batch = [Variable(torch.LongTensor(seq)) for seq in seq_batch]
         if cuda:
-            seq_batch = [x.cuda() for x in seq_batch]
+            seq_batch = [seq.cuda() for seq in seq_batch]
         return seq_batch, lengths
-
-        # packed_padded_seq = rnn.pack_padded_sequence(seq_batch, lengths)
-        #
-        # # seq_batch = Variable(torch.LongTensor(seq_batch))
-        #
-        # print(packed_padded_seq)
-        # # padding is essential for doing batches of sequence data
-        # # packed_padded_seq = rnn.pack_padded_sequence(seq_batch, lengths)
-        #
-        # if cuda:
-        #     return packed_padded_seq.cuda()
-        # return packed_padded_seq
 
     @staticmethod
     def prepare_labels(labels, cuda=True, evalu=False):
@@ -123,7 +110,7 @@ class SentiBiRNN(AbstractModel):
         return loss, \
                self.get_accuracy(output, golds), \
                dict(Counter(list(output))), \
-               {i: mean_pred_label_conf[i] for i in range(len(mean_pred_label_conf))}
+               mean_pred_label_conf#{i: mean_pred_label_conf[i] for i in range(len(mean_pred_label_conf))}
 
     @staticmethod
     def get_accuracy(output, golds):
@@ -187,7 +174,7 @@ class EncoderRNN(nn.Module):
         if pretrained_emb is not None:
             print('Using pretrained word embeddings...')
             self.word_embeddings.weight.data.copy_(torch.from_numpy(pretrained_emb))
-        self.word_embeddings.weight.requires_grad = False
+        # self.word_embeddings.weight.requires_grad = False
 
         # initialize hidden state h0, diff for forward and backward
         self.hidden_dim = rnn_hidden_dim
@@ -218,17 +205,17 @@ class EncoderRNN(nn.Module):
     def _build_init_hidden(self, size):
         return Variable(torch.zeros(size, self.hidden_dim).cuda())
 
-    def forward(self, sorted_seqs, sorted_lens):
+    def forward(self, sequences, lengths):
         """
-        :param sorted_seqs: tensor of a sequence of word-to-idxs
-        :param sorted_lens: sorted list of lengths
+        :param sequences: tensor of a sequence of word-to-idxs
+        :param lengths: sorted list of lengths
         :return: returns final output prediction of model
         """
-        max_len = sorted_lens[0]
-        emb_seq_list = [self.word_embeddings(seq) for seq in sorted_seqs]
+        max_len = max(lengths)
+        emb_seq_list = [self.word_embeddings(seq) for seq in sequences]
 
         # make length mask, may be able to make more efficient in future
-        mask = np.array([[1 if i<l else 0 for i in range(max_len)] for l in sorted_lens])
+        mask = np.array([[1 if i<l else 0 for i in range(max_len)] for l in lengths])
         mask = Variable(torch.FloatTensor(mask))
         minus_mask = 1 - mask
 
@@ -242,7 +229,7 @@ class EncoderRNN(nn.Module):
             return F.pad(d2_input, (0, 0, inc, 0)).view(max_len, self.embsz) # pad and bring back
 
         # map the padding to the input
-        padded_emb_seqs = [pad(seq, crtlen) for seq, crtlen in izip(emb_seq_list, sorted_lens)]
+        padded_emb_seqs = [pad(seq, crtlen) for seq, crtlen in izip(emb_seq_list, lengths)]
         padded_embs = torch.stack(padded_emb_seqs)
 
         # prop through the bi-rnn

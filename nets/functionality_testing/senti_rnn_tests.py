@@ -11,7 +11,7 @@ import numpy as np
 def run_model_tests():
     # load data and get embedding
     print('Data loading test...')
-    emb_size = 200
+    emb_size = 50
     batch_size = 100
 
     dataset = SentimentDataset()
@@ -25,12 +25,12 @@ def run_model_tests():
         vocabulary=glove_vocab,
         embedding_dim=emb_size,
         encoder_hidden_dim=32,
-        dense_hidden_dim=32,
+        dense_hidden_dim=64,
         labels=[0, 1],
         dropout=0,
         clip_norm=1,
         weight_decay=0,
-        learning_rate=1e-4,
+        learning_rate=1e-3,
         batch_size=batch_size,
         emb_dict=glove_embeddings,
     )
@@ -62,13 +62,13 @@ def run_model_tests():
             for name, acc in train_accs:
                 print('    {:<10}:  {:>5}'.format(name, acc))
             print('    Out dist  :  {}'.format(t_out_dist))
-            print('    Mean outs :  {}'.format(t_mean_outs))
+            print('    Mean conf :  {}'.format(t_mean_outs))
 
             print('  Val Accuracies:')
             for name, acc in val_accs:
                 print('    {:<10}:  {:>5}'.format(name, acc))
             print('    Out dist  :  {}'.format(v_out_dist))
-            print('    Mean outs :  {}'.format(v_mean_outs))
+            print('    Mean conf :  {}'.format(v_mean_outs))
 
 
             i += 1
