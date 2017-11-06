@@ -3,6 +3,10 @@ from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, KFold
+from sklearn.decomposition import pca
+from cycler import cycler
+from nets import util
+import matplotlib.pyplot as plt
 import numpy as np
 import random
 
@@ -29,6 +33,7 @@ class AbstractDataset(object):
 
     # Static constants.
     RAW_DATASETS_DIR = PROJECT_BASE_DIR + 'raw_datasets/'
+    DATA_VIZ_DIR = PROJECT_BASE_DIR + 'data_viz/'
 
     # Initializes the essential components of a dataset as attributes.
     def __init__(self):
@@ -59,10 +64,13 @@ class AbstractDataset(object):
     def get_test_x(self):
         return self._test_x
 
-    def get_data_statistics(self):
+    def get_num_features(self):
+        return len(self.get_train_x()[0])
+
+    def get_data_statistics(self, string_len=100):
         print('Statistics for dataset {}...'.format(self.dataset_name))
         for x, y, name in self.iter_all_data():
-            unique_labels = set(y)
+            unique_labels = np.unique(y)
             print('Dataset is {}:'.format(name))
             print('\tX data is encoded as {}, with x[0] {}'.format(type(x), type(x[0])))
             print('\tY data is encoded as {}, with y[0] {}'.format(type(y), type(x[y])))
@@ -73,7 +81,9 @@ class AbstractDataset(object):
                 print('\t- Total number of samples with label = {}: {}'.format(label, l_count))
             print('\t- Sample example samples:')
             for i in range(0, 5):
-                print('\t\tSample {}: x=\"{}\", y=\"{}\"'.format(i, x[i], y[i]))
+                x_str = str(x[i])[:string_len]
+                x_str += '...' if len(x_str) == string_len else ''
+                print('\t\tSample {}: x=\"{}\", y=\"{}\"'.format(i, x_str, y[i]))
             print('')
 
     def iter_all_data(self):
@@ -333,7 +343,8 @@ class AbstractDataset(object):
     def get_path(self):
         pass
 
-    def __serialize_data(self, file_name, x, y):
+    @staticmethod
+    def __serialize_data(file_name, x, y):
         if file_name:
             np.savez(file_name, x=x, y=y)
 
@@ -343,3 +354,103 @@ class AbstractDataset(object):
         self.__serialize_data(path + val_fname, self._val_x, self._val_y)
         self.__serialize_data(path + test_fname, self._test_x, self._test_y)
 
+    # Data visualization
+    def visualize_data(self, save_dir):
+        assert(save_dir.endswith('/'))
+        util.make_sure_path_exists(self.DATA_VIZ_DIR + save_dir)
+
+        compressor = pca.PCA(n_components=2)
+        compressor.fit(self.get_train_x())
+        xtr = compressor.transform(self.get_train_x())
+
+        minx1 = min(xtr[:,0])
+        maxx1 = max(xtr[:,0])
+        minx2 = min(xtr[:,1])
+        maxx2 = max(xtr[:,1])
+
+        # give 15% leeway for display
+        prop = 0.10
+        axes = [minx1 - (prop * abs(minx1)), maxx1 + (prop * maxx1),
+                minx2 - (prop * abs(minx2)), maxx2 + (prop * maxx2)]
+
+        for x, y, set_name in self.iter_all_data():
+            self._visualize(compressor.transform(x), y, set_name, axes, save_dir)
+
+    def _visualize(self, x, y, set_name, axes, save_dir):
+        """
+        This saves a file that visualizes the data by projecting it to two dimensions.
+        :param x: X data
+        :param y: labels for the data to choose shapes
+        :param set_name: string for data subset we are using
+        """
+        save_name = (set_name + '_' + self.dataset_name).replace(' ','_').lower()
+        markers = ['.', 'o', '^', 'v', 's', '+', 'h', 'x', 'D', '*']
+
+        # see https://xkcd.com/color/rgb/
+        colors = ['xkcd:purple', 'xkcd:green', 'xkcd:cyan', 'xkcd:yellow', 'xkcd:grey',
+                  'xkcd:red', 'xkcd:navy', 'xkcd:gold', 'xkcd:bright pink', 'xkcd:blue']
+
+        property_cycler = cycler('marker', markers) + cycler('color', colors)
+
+        # build the image
+        plt.rc('axes', prop_cycle=property_cycler)
+        plt.rc('lines', linestyle=None)
+        fig, ax = plt.subplots(figsize=(16, 9.6))
+        for label in np.unique(y):
+            xx = x[y==label][:,0]
+            xy = x[y==label][:,1]
+            ax.plot(xx, xy, label='Class {}'.format(label), markersize=3)
+
+        ax.set_xlim(axes[0], axes[1])
+        ax.set_ylim(axes[2], axes[3])
+        ax.set_title('{}: {}'.format(self.dataset_name, set_name))
+        ax.set_xlabel(u'PCA $x_1$')
+        ax.set_ylabel(u'PCA $x_2$')
+
+        # Shrink current axis's height by 10% on the bottom
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0 + box.height * 0.1,
+                         box.width, box.height * 0.9])
+
+        # Put a legend below current axis
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
+                  ncol=len(np.unique(y)))
+
+        fig.savefig(self.DATA_VIZ_DIR + save_dir + save_name + '.png', bbox_inches='tight')
+
+    # analysis
+    def pca_visualize(self, save_dir):
+        assert(save_dir.endswith('/'))
+        util.make_sure_path_exists(self.DATA_VIZ_DIR + save_dir)
+        save_name = self.dataset_name.replace(' ','_').lower()
+
+        errors = {'train':[], 'val':[], 'test':[]}
+        xdata = [self.get_train_x(), self.get_val_x(), self.get_test_x()]
+
+        cum_variances = []
+        indiv_variances = []
+        x = range(1, min(self.get_num_features(), 101)) # only do first 100 feats
+        for i in x:
+            model = pca.PCA(n_components=i)  # get all components
+            model.fit(self.get_train_x())
+
+            for key, xset in zip(errors.keys(), xdata):
+                recon = model.inverse_transform(model.transform(xset))
+                errors[key].append(util.mse(xset, recon))
+
+            indiv_variances.append(model.explained_variance_ratio_[-1])
+            cum_variances.append(np.sum(model.explained_variance_ratio_))
+
+        f, axarr = plt.subplots(2, sharex=True, figsize=(16, 9.6))
+        axarr[0].plot(x, errors['train'], 'b:', label=u'Train Reconstruction MSE')
+        axarr[0].plot(x, errors['val'], 'g:', label=u'Val Reconstruction MSE')
+        axarr[0].plot(x, errors['test'], 'r:', label=u'Test Reconstruction MSE')
+        axarr[1].plot(x, indiv_variances, 'b--', label=u'Variance Explained by Each Component')
+        axarr[1].plot(x, 1 - np.array(cum_variances), 'b:', label=u'1 Minus Cumulative Explained Variance')
+        axarr[1].set_xlabel('Dimensionality of PCA Representation')
+        axarr[0].set_title('Analysis of PCA over Error and Variance')
+        axarr[0].set_ylabel('MSE')
+        axarr[1].set_ylabel('Proportion of Explained Variance')
+        axarr[0].legend()
+        axarr[1].legend()
+        f.savefig(self.DATA_VIZ_DIR + save_dir + save_name + '_pca.png', bbox_inches='tight')

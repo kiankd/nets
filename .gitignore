@@ -89,4 +89,5 @@ ENV/
 .ropeproject
 raw_datasets/
 raw_datasets/*
-/nets/raw_datasets/
+data_viz/
+data_viz/*

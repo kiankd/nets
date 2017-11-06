@@ -1,12 +1,27 @@
+import numpy as np
 from nets.dataset.classification import AbstractClassificationDataset
 from sklearn.datasets import make_classification, make_blobs
-import numpy as np
+from sklearn.model_selection import train_test_split
 
 
 class SyntheticDataset(AbstractClassificationDataset):
     """
     This class exists to build synthetic data.
     """
+    def __init__(self, name, hyperparameters=None):
+        super(SyntheticDataset, self).__init__()
+        self.dataset_name = name
+
+    def set_all_data(self, x, y):
+        train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.2, random_state=0)
+        train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, test_size=0.15, random_state=10)
+        self._train_x = train_x
+        self._train_y = train_y
+        self._val_x = val_x
+        self._val_y = val_y
+        self._test_x = test_x
+        self._test_y = test_y
+
     def _load_data_from_file(self, file_name, generate_data=False):
         """
         :param file_name: string designating file name or generative function
@@ -35,7 +50,6 @@ class SyntheticDataset(AbstractClassificationDataset):
 
     def default_load(self):
         super(SyntheticDataset, self).default_load()
-
 
         # For now, until we decide on a solid synthetic dataset, we will use
         # this in a generative way.
