@@ -20,10 +20,13 @@ class AbstractModel(object):
         :return: string
         """
         s = [self.model_name]
-        for key,value in self.params.iteritems():
-            if not self.is_default_parameter(key, value) and \
-                            type(value) is not list:
-                s.append('_{}{}'.format(key, value))
+        try:
+            for key,value in self.params.iteritems():
+                if not self.is_default_parameter(key, value) and \
+                                type(value) is not list:
+                    s.append('_{}{}'.format(key, value))
+        except AttributeError:
+            pass
         return ''.join(s)
 
     def get_serializable_config(self):
@@ -36,7 +39,6 @@ class AbstractModel(object):
             s.append('\t{} : {}\n'.format(key, str(value)))
         s.append('\n')
         return ''.join(s)
-
 
     @staticmethod
     def is_default_parameter(param_name, value):

@@ -11,7 +11,7 @@ def get_glove_fname(path, dim):
 class SentimentDataset(AbstractClassificationDataset):
     def __init__(self):
         super(SentimentDataset, self).__init__()
-        self.dataset_name = 'Sentiment Analysis Dataset'
+        self.name = 'Sentiment Analysis Dataset'
         self.embeddings = None
         self.vocab = None
 
@@ -87,12 +87,15 @@ class SentimentDataset(AbstractClassificationDataset):
                 y.append(int(row['label'])) # assumes labels are already integers
         return x, y
 
+    def _get_default_set_fname(self, set_name):
+        return 'senti_{}'.format(set_name)
+
     def get_path(self):
         super(SentimentDataset, self).get_path()
         return ''.join([self.RAW_DATASETS_DIR, 'sentiment_analysis/'])
 
-    def default_load(self, dataset_name=''):
-        super(SentimentDataset, self).default_load()
-        return self.load_all_data('{}_train.npz'.format(dataset_name),
-                                  '{}_val.npz'.format(dataset_name),
-                                  '{}_test.npz'.format(dataset_name))
+    # def default_load(self, dataset_name=''):
+    #     super(SentimentDataset, self).default_load()
+    #     return self.load_all_data('{}_train.npz'.format(dataset_name),
+    #                               '{}_val.npz'.format(dataset_name),
+    #                               '{}_test.npz'.format(dataset_name))

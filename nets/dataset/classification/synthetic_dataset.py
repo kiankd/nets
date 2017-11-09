@@ -8,9 +8,73 @@ class SyntheticDataset(AbstractClassificationDataset):
     """
     This class exists to build synthetic data.
     """
-    def __init__(self, name, hyperparameters=None):
+    EASY = 'easy'
+    MEDIUM = 'med'
+    HARD = 'hard'
+
+    DIFFICULTY_TO_SEP = {
+        EASY: 3,
+        MEDIUM: 2,
+        HARD: 1,
+    }
+
+    DIFFICULTY_TO_CPC = {
+        EASY: 2,
+        MEDIUM: 2,
+        HARD: 2,
+    }
+
+    DIFFICULTY_TO_STD = {
+        EASY: 8,
+        MEDIUM: 15,
+        HARD: 20,
+    }
+
+
+    def __init__(self, name, difficulty='', blobs=True):
         super(SyntheticDataset, self).__init__()
-        self.dataset_name = name
+        self.name = name
+        self.difficulty = difficulty
+        self.blobs = blobs
+
+    @staticmethod
+    def iter_all_difficulties():
+        for diff in [SyntheticDataset.EASY, SyntheticDataset.MEDIUM, SyntheticDataset.HARD]:
+            yield diff
+
+    def make_dataset(self, num_classes):
+        if self.blobs:
+            num_samples = 5000
+            num_features = 1000
+            num_classes = num_classes
+            cluster_std = self.DIFFICULTY_TO_STD[self.difficulty]
+
+            x, y = make_blobs(
+                n_samples=num_samples,
+                n_features=num_features,
+                centers=num_classes,
+                cluster_std=cluster_std,
+                random_state=8675309,
+            )
+        else:
+            num_samples = 5000
+            num_features = 1000
+            num_redundant = 500
+            num_informative = 50
+            num_clusters_per_class = self.DIFFICULTY_TO_CPC[self.difficulty]
+            class_sep = self.DIFFICULTY_TO_SEP[self.difficulty]
+
+            x, y = make_classification(
+                n_samples=num_samples,
+                n_features=num_features,
+                n_informative=num_informative,
+                n_redundant=num_redundant,
+                n_classes=num_classes,
+                n_clusters_per_class=num_clusters_per_class,
+                class_sep=class_sep,
+                random_state=1848,
+            )
+        self.set_all_data(x, y)
 
     def set_all_data(self, x, y):
         train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.2, random_state=0)
@@ -44,15 +108,9 @@ class SyntheticDataset(AbstractClassificationDataset):
 
         return x, y
 
+    def _get_default_set_fname(self, set_name):
+        return 'synth{}_{}'.format(self.name, set_name)
+
     def get_path(self):
         super(SyntheticDataset, self).get_path()
         return ''.join([self.RAW_DATASETS_DIR, 'synthetic_data/'])
-
-    def default_load(self):
-        super(SyntheticDataset, self).default_load()
-
-        # For now, until we decide on a solid synthetic dataset, we will use
-        # this in a generative way.
-        # return self.load_all_data('np_synth_train.npz',
-        #                           'np_synth_val.npz',
-        #                           'np_synth_test.npz')

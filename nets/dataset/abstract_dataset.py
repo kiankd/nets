@@ -1,4 +1,5 @@
 from nets import PROJECT_BASE_DIR
+from nets.model.abstract_model import AbstractModel
 from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from sklearn.preprocessing import StandardScaler
@@ -43,7 +44,7 @@ class AbstractDataset(object):
         self._val_y = None
         self._test_x = None
         self._test_y = None
-        self.dataset_name = ''
+        self.name = ''
 
     # Getter methods.
     def get_train_x(self):
@@ -68,7 +69,7 @@ class AbstractDataset(object):
         return len(self.get_train_x()[0])
 
     def get_data_statistics(self, string_len=100):
-        print('Statistics for dataset {}...'.format(self.dataset_name))
+        print('Statistics for dataset {}...'.format(self.name))
         for x, y, name in self.iter_all_data():
             unique_labels = np.unique(y)
             print('Dataset is {}:'.format(name))
@@ -200,13 +201,13 @@ class AbstractDataset(object):
             'Different number of samples than predictions! {} vs {}'\
                 .format(len(gold), len(predictions))
 
-    def _results_analysis(self, model_applied, data_subset_name, gold, preds):
+    def _results_analysis(self, model, data_subset_name, gold, preds):
         """
         This is an abstraction for the functions below since they would have
         almost the same header string for each data subset the model would be
         applied to.
 
-        :param model_applied: string - denotes the name of the model applied to
+        :param model: AbstractModel - denotes the name of the model applied to
         obtain these results. This may be an actual path to the model's config
         file in order to ensure absolute clarity in exactly what model with
         what parameters obtained these results.
@@ -217,8 +218,12 @@ class AbstractDataset(object):
         """
 
         header = 'Model {} got the following results on dataset {} - {}:\n\n'\
-                 .format(model_applied, self.dataset_name, data_subset_name)
+                 .format(model.get_full_name(), self.name, data_subset_name)
         analysis = self._generate_results_report(gold, preds)
+
+        # TODO: incorporate very specific hyperparameter writing for both model AND data.
+        # model_specs = '\n\nMODEL SPECIFICS: {}'.format(model.get_specifics())
+
         full_report = ''.join([header, analysis])
 
         # TODO: serialize results.
@@ -284,9 +289,13 @@ class AbstractDataset(object):
         self._val_x, self._val_y = self.__load_data(path + val_fname)
         self._test_x, self._test_y = self.__load_data(path + test_fname)
 
-    @abstractmethod
     def default_load(self):
-        pass
+        return self.load_all_data(
+            train_fname=self.get_default_train_fname(),
+            val_fname=self.get_default_val_fname(),
+            test_fname=self.get_default_test_fname(),
+            get_path=True
+        )
 
     def split_train_into_val(self, proportion=0.2, random_seed=1871):
         """
@@ -338,15 +347,36 @@ class AbstractDataset(object):
 
         return new_train, new_val, new_test
 
-    # Data serialization - we use numpy save.
+    @abstractmethod
+    def _get_default_set_fname(self, set_name):
+        pass
+
+    def get_default_train_fname(self):
+        return self._get_default_set_fname('train')
+
+    def get_default_val_fname(self):
+        return self._get_default_set_fname('val')
+
+    def get_default_test_fname(self):
+        return self._get_default_set_fname('test')
+
     @abstractmethod
     def get_path(self):
         pass
 
+
+    # Data serialization - we use numpy save.
     @staticmethod
     def __serialize_data(file_name, x, y):
         if file_name:
             np.savez(file_name, x=x, y=y)
+
+    def serialize(self):
+        self.serialize_all_data(
+            train_fname=self.get_default_train_fname(),
+            val_fname=self.get_default_val_fname(),
+            test_fname=self.get_default_test_fname(),
+        )
 
     def serialize_all_data(self, train_fname, val_fname='', test_fname=''):
         path = self.get_path()
@@ -383,7 +413,7 @@ class AbstractDataset(object):
         :param y: labels for the data to choose shapes
         :param set_name: string for data subset we are using
         """
-        save_name = (set_name + '_' + self.dataset_name).replace(' ','_').lower()
+        save_name = (set_name + '_' + self.name).replace(' ', '_').lower()
         markers = ['.', 'o', '^', 'v', 's', '+', 'h', 'x', 'D', '*']
 
         # see https://xkcd.com/color/rgb/
@@ -403,7 +433,7 @@ class AbstractDataset(object):
 
         ax.set_xlim(axes[0], axes[1])
         ax.set_ylim(axes[2], axes[3])
-        ax.set_title('{}: {}'.format(self.dataset_name, set_name))
+        ax.set_title('{}: {}'.format(self.name, set_name))
         ax.set_xlabel(u'PCA $x_1$')
         ax.set_ylabel(u'PCA $x_2$')
 
@@ -417,12 +447,14 @@ class AbstractDataset(object):
                   ncol=len(np.unique(y)))
 
         fig.savefig(self.DATA_VIZ_DIR + save_dir + save_name + '.png', bbox_inches='tight')
+        plt.clf()
+        plt.close('all')
 
     # analysis
     def pca_visualize(self, save_dir):
         assert(save_dir.endswith('/'))
         util.make_sure_path_exists(self.DATA_VIZ_DIR + save_dir)
-        save_name = self.dataset_name.replace(' ','_').lower()
+        save_name = self.name.replace(' ', '_').lower()
 
         errors = {'train':[], 'val':[], 'test':[]}
         xdata = [self.get_train_x(), self.get_val_x(), self.get_test_x()]
@@ -447,10 +479,10 @@ class AbstractDataset(object):
         axarr[0].plot(x, errors['test'], 'r:', label=u'Test Reconstruction MSE')
         axarr[1].plot(x, indiv_variances, 'b--', label=u'Variance Explained by Each Component')
         axarr[1].plot(x, 1 - np.array(cum_variances), 'b:', label=u'1 Minus Cumulative Explained Variance')
-        axarr[1].set_xlabel('Dimensionality of PCA Representation')
-        axarr[0].set_title('Analysis of PCA over Error and Variance')
-        axarr[0].set_ylabel('MSE')
-        axarr[1].set_ylabel('Proportion of Explained Variance')
+        axarr[1].set_xlabel(u'Dimensionality of PCA Representation')
+        axarr[0].set_title(u'Analysis of PCA over Error and Variance')
+        axarr[0].set_ylabel(u'MSE')
+        axarr[1].set_ylabel(u'Proportion of Explained Variance')
         axarr[0].legend()
         axarr[1].legend()
         f.savefig(self.DATA_VIZ_DIR + save_dir + save_name + '_pca.png', bbox_inches='tight')

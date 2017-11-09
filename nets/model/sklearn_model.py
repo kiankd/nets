@@ -1,7 +1,6 @@
 from nets import AbstractModel
 
 class SKLearnModel(AbstractModel):
-
     def __init__(self, name, hyperparameters=None, model=None):
         """
         :param model: This is expected to be a SKlearn classification model,
