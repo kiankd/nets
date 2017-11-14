@@ -14,6 +14,10 @@ class AbstractModel(object):
         self.model_name = name
         self.params = hyperparameters
 
+    def get_param_vals(self, with_name=False):
+        name_list = [self.get_full_name()] if with_name else []
+        return name_list + list(self.params.values())
+
     def get_full_name(self):
         """
         Gets the full name of a model based on the values of its hyper-params.

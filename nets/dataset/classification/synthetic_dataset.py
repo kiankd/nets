@@ -3,51 +3,55 @@ from nets.dataset.classification import AbstractClassificationDataset
 from sklearn.datasets import make_classification, make_blobs
 from sklearn.model_selection import train_test_split
 
+DIFFICULTY = 'difficulty'
+NUM_CLASSES = 'num_classes'
+MAKE_BLOBS = 'make_blobs'
+
+EASY = 'easy'
+MEDIUM = 'med'
+HARD = 'hard'
+
+DIFF_TO_SEP = {
+    EASY: 3,
+    MEDIUM: 2,
+    HARD: 1,
+}
+
+DIFF_TO_CPC = {
+    EASY: 2,
+    MEDIUM: 2,
+    HARD: 2,
+}
+
+DIFF_TO_STD = {
+    EASY: 8,
+    MEDIUM: 15,
+    HARD: 20,
+}
 
 class SyntheticDataset(AbstractClassificationDataset):
     """
     This class exists to build synthetic data.
     """
-    EASY = 'easy'
-    MEDIUM = 'med'
-    HARD = 'hard'
-
-    DIFFICULTY_TO_SEP = {
-        EASY: 3,
-        MEDIUM: 2,
-        HARD: 1,
-    }
-
-    DIFFICULTY_TO_CPC = {
-        EASY: 2,
-        MEDIUM: 2,
-        HARD: 2,
-    }
-
-    DIFFICULTY_TO_STD = {
-        EASY: 8,
-        MEDIUM: 15,
-        HARD: 20,
-    }
-
-
-    def __init__(self, name, difficulty='', blobs=True):
+    def __init__(self, name, params):
         super(SyntheticDataset, self).__init__()
         self.name = name
-        self.difficulty = difficulty
-        self.blobs = blobs
+        self.params = params
+
+    def get_param_vals(self):
+        return list(self.params.values())
 
     @staticmethod
     def iter_all_difficulties():
-        for diff in [SyntheticDataset.EASY, SyntheticDataset.MEDIUM, SyntheticDataset.HARD]:
+        for diff in [EASY, MEDIUM, HARD]:
             yield diff
 
-    def make_dataset(self, num_classes):
-        if self.blobs:
+    def make_dataset(self):
+        if self.params[MAKE_BLOBS]:
             num_samples = 5000
             num_features = 1000
-            num_classes = num_classes
-            cluster_std = self.DIFFICULTY_TO_STD[self.difficulty]
+            num_classes = self.params[NUM_CLASSES]
+            cluster_std = DIFF_TO_STD[self.params[DIFFICULTY]]
 
             x, y = make_blobs(
                 n_samples=num_samples,
@@ -61,15 +65,15 @@ class SyntheticDataset(AbstractClassificationDataset):
             num_features = 1000
             num_redundant = 500
             num_informative = 50
-            num_clusters_per_class = self.DIFFICULTY_TO_CPC[self.difficulty]
-            class_sep = self.DIFFICULTY_TO_SEP[self.difficulty]
+            num_clusters_per_class = DIFF_TO_CPC[self.params[DIFFICULTY]]
+            class_sep = DIFF_TO_SEP[self.params[DIFFICULTY]]
 
             x, y = make_classification(
                 n_samples=num_samples,
                 n_features=num_features,
                 n_informative=num_informative,
                 n_redundant=num_redundant,
-                n_classes=num_classes,
+                n_classes=self.params[NUM_CLASSES],
                 n_clusters_per_class=num_clusters_per_class,
                 class_sep=class_sep,
                 random_state=1848,
@@ -85,6 +89,10 @@ class SyntheticDataset(AbstractClassificationDataset):
         self._val_y = val_y
         self._test_x = test_x
         self._test_y = test_y
+
+    def get_path(self):
+        super(SyntheticDataset, self).get_path()
+        return ''.join([self.RAW_DATASETS_DIR, 'synthetic_data/'])
 
     def _load_data_from_file(self, file_name, generate_data=False):
         """
@@ -110,7 +118,3 @@ class SyntheticDataset(AbstractClassificationDataset):
 
     def _get_default_set_fname(self, set_name):
         return 'synth{}_{}'.format(self.name, set_name)
-
-    def get_path(self):
-        super(SyntheticDataset, self).get_path()
-        return ''.join([self.RAW_DATASETS_DIR, 'synthetic_data/'])

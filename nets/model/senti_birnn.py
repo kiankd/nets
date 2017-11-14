@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from nets import AbstractModel
+from nets.model.neural import clip_gradient
 from collections import OrderedDict, Counter
 from itertools import izip
 from torch.autograd import Variable
@@ -18,15 +19,6 @@ def iter_accs():
     # yield 'Recall', recall_score
     # yield 'Precision', precision_score
     # yield 'F1', f1_score
-
-def clip_gradient(parameters, clip):
-    """Computes a gradient clipping coefficient based on gradient norm."""
-    totalnorm = 0
-    for p in parameters:
-        modulenorm = p.grad.data.norm()
-        totalnorm += modulenorm ** 2
-    totalnorm = np.sqrt(totalnorm)
-    return min(1, clip / (totalnorm + 1e-6))
 
 # Wrapper class over our abstract model paradigm.
 class SentiBiRNN(AbstractModel):
