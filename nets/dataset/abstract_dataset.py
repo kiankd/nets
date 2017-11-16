@@ -92,17 +92,16 @@ class AbstractDataset(object):
         yield self._val_x, self._val_y, 'Validation set'
         yield self._test_x, self._test_y, 'Testing set'
 
-    def iterate_train_minibatches(self, batchsize, epochs, shuffle=True):
+    def iterate_train_minibatches(self, batch_size, epochs, shuffle=True):
         """
-        Iterates minibatches, used mostly only by neural networks.
-        :param batchsize: int - designates size of batch.
+        Iterates minibatches, used mostly only by neural networks. Yields triple:
+        x, y, num_epochs.
+
+        :param batch_size: int - designates size of batch.
         :param epochs: int - number of epochs to train for.
         :param shuffle: bool - optional, says whether or not randomized shuffle.
         :return: tuple - yielded subset of the training data as a minibatch.
         """
-        # TODO: verify that we probably don't need to copy - will be expensive.
-        # ... Alternatively, if we copy, then continuously iterate over the
-        # MBs until a stop condition is reached; e.g. number of epochs.
         x, y = self.get_train_data()
 
         for e in range(epochs):
@@ -111,12 +110,17 @@ class AbstractDataset(object):
                 c = list(zip(x, y))
                 random.shuffle(c)
                 x, y = zip(*c)
+                x = np.array(x)
+                y = np.array(y)
 
             # Iterate. Note that we cut off samples by rounding down.
-            for i in xrange(len(x) / batchsize):
-                start = i * batchsize
-                end = (i+1) * batchsize
-                yield x[start:end], y[start:end], e
+            for i in range(int(len(x) / batch_size)):
+                start = i * batch_size
+                end = (i+1) * batch_size
+                if batch_size == 1:
+                    yield x[start].reshape(1, -1), y[start].reshape(1, -1), e
+                else:
+                    yield x[start:end], y[start:end], e
 
     def iterate_cross_validation(self, k_folds=5, merge_train_val=False, normalize=False, random_seed=1917,
                                  verbose=True):

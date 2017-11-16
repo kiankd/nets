@@ -1,12 +1,17 @@
-from abc import ABCMeta
+from abc import ABCMeta, abstractmethod
 from nets import AbstractDataset
-from sklearn.metrics import classification_report, \
-    precision_recall_fscore_support
+from sklearn.metrics import classification_report, precision_recall_fscore_support
+
+NUM_CLASSES = 'num_classes'
 
 class AbstractClassificationDataset(AbstractDataset):
 
     # Makes the class abstract.
     __metaclass__ = ABCMeta
+
+    @abstractmethod
+    def get_num_classes(self):
+        pass
 
     # Overriding abstract method
     def evaluate(self, gold, predictions):

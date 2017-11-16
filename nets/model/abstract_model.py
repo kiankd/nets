@@ -14,9 +14,12 @@ class AbstractModel(object):
         self.model_name = name
         self.params = hyperparameters
 
-    def get_param_vals(self, with_name=False):
+    def get_param_vals(self, with_name=False, filtr=None):
         name_list = [self.get_full_name()] if with_name else []
-        return name_list + list(self.params.values())
+        if filtr is None:
+            filtr = self.params
+        values = [self.params[key] for key in filtr]
+        return name_list + values
 
     def get_full_name(self):
         """

@@ -1,10 +1,9 @@
 import numpy as np
-from nets.dataset.classification import AbstractClassificationDataset
+from nets.dataset.classification import AbstractClassificationDataset, NUM_CLASSES
 from sklearn.datasets import make_classification, make_blobs
 from sklearn.model_selection import train_test_split
 
 DIFFICULTY = 'difficulty'
-NUM_CLASSES = 'num_classes'
 MAKE_BLOBS = 'make_blobs'
 
 EASY = 'easy'
@@ -37,6 +36,9 @@ class SyntheticDataset(AbstractClassificationDataset):
         super(SyntheticDataset, self).__init__()
         self.name = name
         self.params = params
+
+    def get_num_classes(self):
+        return self.params[NUM_CLASSES]
 
     def get_param_vals(self):
         return list(self.params.values())

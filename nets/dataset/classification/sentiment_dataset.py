@@ -13,6 +13,9 @@ class SentimentDataset(AbstractClassificationDataset):
         self.embeddings = None
         self.vocab = None
 
+    def get_num_classes(self):
+        return None
+
     @staticmethod
     def tokenize(string):
         """ Tokenizes a string. """

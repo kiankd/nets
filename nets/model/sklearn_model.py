@@ -1,3 +1,4 @@
+import inspect
 from nets import AbstractModel
 
 MODEL = 'model'
@@ -12,8 +13,13 @@ class SKLearnModel(AbstractModel):
         is included at the current time for sklearn models.
         """
         super(SKLearnModel, self).__init__(name, params)
+
         self.params = params
-        self.classifier = params[MODEL]
+        sklearn_params = {}
+        for key in params:
+            if key in inspect.getfullargspec(params[MODEL]).args:
+                sklearn_params[key] = params[key]
+        self.classifier = params[MODEL](**sklearn_params)
 
     def predict(self, x):
         super(SKLearnModel, self).predict(x)

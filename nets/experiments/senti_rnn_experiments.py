@@ -44,7 +44,7 @@ def run_model_tests():
 
     print('Testing minibatch iteration...')
     i = -1
-    for samples, labels, epoch in dataset.iterate_train_minibatches(batchsize=batch_size, epochs=100, shuffle=True):
+    for samples, labels, epoch in dataset.iterate_train_minibatches(batch_size=batch_size, epochs=100, shuffle=True):
         if epoch > i:
             train_loss, train_accs, t_out_dist, t_mean_outs = \
                 nets_model.predict_with_stats(dataset.get_train_x(), dataset.get_train_y())

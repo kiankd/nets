@@ -6,7 +6,6 @@ import numpy as np
 from nets import AbstractModel, util
 from nets.model.neural import clip_gradient
 from collections import OrderedDict, Counter
-from itertools import izip
 from torch.autograd import Variable
 
 #######################
@@ -22,16 +21,22 @@ class NeuralModel(AbstractModel):
         super(NeuralModel, self).__init__(name, params)
         self.model = torch_module
         self.params = params
+        self.lr = self.params[LEARNING_RATE]
+        self.loss_function = self.params[LOSS_FUN]()
         self.optimizer = optim.Adam(self.parameters(),
                                     lr=self.params[LEARNING_RATE],
                                     weight_decay=self.params[WEIGHT_DECAY])
 
     @staticmethod
     def prepare_samples(sample_batch, cuda=True):
-        samps = [Variable(torch.LongTensor(x)) for x in sample_batch]
+        v = Variable(torch.FloatTensor(sample_batch))
         if cuda:
-            samps = [x.cuda() for x in seq_batch]
-        return samps
+            return v.cuda()
+        return v
+        # samps = [Variable(torch.FloatTensor(sample)) for sample in sample_batch]
+        # if cuda:
+        #     samps = [sample.cuda() for sample in samps]
+        # return samps
 
     @staticmethod
     def prepare_labels(labels, cuda=True, evalu=False):
@@ -47,21 +52,32 @@ class NeuralModel(AbstractModel):
     def parameters(self):
         return filter(lambda p: p.requires_grad, self.model.parameters())
 
-    def predict(self, x):
+    def update_lr(self, change):
+        self.lr *= change
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.lr
+
+    def training_predict(self, x):
         super(NeuralModel, self).predict(x)
-        return self.model(x)
+        samples = self.prepare_samples(x)
+        return self.model(samples)
+
+    def predict(self, x):
+        preds = self.training_predict(x)
+        preds = preds.data.type(torch.DoubleTensor).numpy()
+        return np.argmax(preds, axis=1)
 
     def predict_with_stats(self, x, gold, cuda=True):
-        preds = self.predict(x)
+        preds = self.training_predict(x)
         golds = self.prepare_labels(gold, cuda=cuda, evalu=True)
-        loss = self.params[LOSS_FUN](preds, golds)
+        loss = self.loss_function(preds, golds)
 
         preds = preds.data.type(torch.DoubleTensor).numpy()
         golds = golds.data.type(torch.DoubleTensor).numpy()
 
         output = np.argmax(preds, axis=1)
 
-        mean_pred_label_conf = np.mean(np.max(preds, axis=0)) # e.g., avg. conf for l=0 is 0.6, l=1 is 0.4
+        mean_pred_label_conf = np.mean(np.max(preds, axis=1)) # e.g., avg. conf for l=0 is 0.6, l=1 is 0.4
         return loss, \
                self.get_accuracy(output, golds), \
                dict(Counter(list(output))), \
@@ -82,14 +98,16 @@ class NeuralModel(AbstractModel):
 
         # Step 3, feed forward, then backprop!
         outputs = self.model(samples)
-        loss = self.params[LOSS_FUN](outputs, targets)
+
+        loss = self.loss_function(outputs, targets)
         loss.backward()
 
         # Step 4 - optional grad clips
-        if self.params[CLIP_NORM] > 0:
-            coeff = clip_gradient(self.parameters(), self.clip_norm)
-            for p in self.parameters():
-                p.grad.mul_(coeff)
+        if CLIP_NORM in self.params:
+            if self.params[CLIP_NORM] > 0:
+                coeff = clip_gradient(self.parameters(), self.clip_norm)
+                for p in self.parameters():
+                    p.grad.mul_(coeff)
 
         self.optimizer.step()
 
