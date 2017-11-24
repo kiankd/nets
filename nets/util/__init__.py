@@ -35,6 +35,8 @@ def str_to_save_name(string):
 def val_to_str(val):
     if type(val) is list:
         s = '-'.join(map(str, val))
+    elif type(val) is dict:
+        s = '-'.join(f'{k}_{v}' for k, v in val.items())
     else:
         try:
             s = val.__name__

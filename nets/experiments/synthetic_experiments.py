@@ -10,7 +10,7 @@ from nets import util
 from nets.model.abstract_model import AbstractModel
 from nets.model.sklearn_model import SKLearnModel
 from nets.model.neural.basic_mlp import DENSE_DIMS, ACTIVATION
-from nets.model.neural.neural_model import CORE, LAM1, LAM2, LAM3
+from nets.model.neural.neural_model import CORE, LAM1, LAM2, LAM3, LOSS_FUN
 from nets.model.neural.neural_constructors import make_mlp, get_default_params
 from nets.dataset.classification import SyntheticDataset, AbstractClassificationDataset
 from nets.dataset.classification import synthetic_dataset as synth_params
@@ -45,6 +45,7 @@ RESULTS_HEADERS = [
     'val_acc',
     'test_acc',
 ]
+EPOCHS = 'epochs'
 
 # specific testing
 def test_model_on_data(model, data, train=True):
@@ -92,19 +93,28 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
 
     print('Testing minibatch iteration...')
     i = -1
-    for samples, labels, epoch in dataset.iterate_train_minibatches(batch_size=bsz, epochs=100, shuffle=True):
+    for samples, labels, epoch in dataset.iterate_train_minibatches(batch_size=bsz, epochs=model.params[EPOCHS], shuffle=True):
         if epoch > i:
-            train_loss, train_accs, t_out_dist, t_mean_outs = \
+            train_losses, train_accs, t_out_dist, t_mean_outs = \
                 nets_model.predict_with_stats(dataset.get_train_x(), dataset.get_train_y())
 
-            val_loss, val_accs, v_out_dist, v_mean_outs = \
+            val_losses, val_accs, v_out_dist, v_mean_outs = \
                 nets_model.predict_with_stats(dataset.get_val_x(), dataset.get_val_y())
 
             print(f'\nEpoch {epoch} results:')
-            # print('  Norm W    : {:>5}'.format(nets_model.get_w_norm()))
-            # print('  Norm Grad : {:>5}'.format(nets_model.get_grad_norm()))
-            print('  Train loss: {:>5}'.format(train_loss.data[0]))
-            print('  Val loss  : {:>5}'.format(val_loss.data[0]))
+            print('  Norm W    : {:>5}'.format(nets_model.get_w_norm()))
+            print('  Norm Grad : {:>5}'.format(nets_model.get_grad_norm()))
+
+            loss_idx = 1
+            loss_names = {1: 'CCE (want to minimize to 0)',
+                          2: 'Attractive Sample-to-Centroid (want to minimize to 0) cosine distance',
+                          3: 'Repulsive Sample-to-Centroid (want to maximize to +1) cosine distance',
+                          4: 'Centroid-to-Centroid Repulsive (want to maximize to +1) cosine distance'}
+            for tloss, vloss in zip(train_losses, val_losses):
+                print('  {}:'.format(loss_names[loss_idx]))
+                print('    Train: {:>5}'.format(tloss.data[0] * (-1 if loss_idx > 2 else 1)))
+                print('    Val  : {:>5}'.format(vloss.data[0] * (-1 if loss_idx > 2 else 1)))
+                loss_idx += 1
 
             print('  Train Accuracies:')
             for name, acc in train_accs:
@@ -127,9 +137,9 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
 
         nets_model.train(samples, labels)
 
-    trainp = best_preds[0]
-    valp = best_preds[1]
-    testp = best_preds[2]
+    trainp, trainreps = best_preds[0]
+    valp, valreps = best_preds[1]
+    testp, testreps = best_preds[2]
 
     if one_time:
         # detailed results reports for each subset
@@ -242,46 +252,39 @@ if __name__ == '__main__':
     model_params = {
         ACTIVATION: [
             torch.nn.ReLU,
-            torch.nn.PReLU,
-            torch.nn.ReLU6,
-            torch.nn.LeakyReLU,
-            torch.nn.ELU,
+            # torch.nn.PReLU,
+            # torch.nn.ReLU6,
+            # torch.nn.LeakyReLU,
+            # torch.nn.ELU,
             # torch.nn.Tanh,
         ],
 
         DENSE_DIMS: [
             # [128],
             [256],
-            # [64, 64],
-            # [128, 128],
-            # [256, 128],
-            # [128, 256],
+            [512],
+            [128, 128],
             [256, 256],
-            # [128, 64, 128],
-            # [256, 128, 256],
-            # [128, 128, 128],
-            # [64, 128, 64],
-            [32, 32, 32],
-            [32, 32, 32, 32],
-            [32, 32, 32, 32, 32],
+            [512, 512],
         ],
 
         CORE: [
-            {}
+            # {},
             # {LAM1: 1, LAM2: 0, LAM3: 0},
             # {LAM1: 0, LAM2: 1, LAM3: 0},
-            # {LAM1: 0, LAM2: 0, LAM3: 1},
+            {LAM1: 0, LAM2: 0, LAM3: 1},
             # {LAM1: 1, LAM2: 0, LAM3: 1},
             # {LAM1: 1, LAM2: 1, LAM3: 0},
-            # {LAM1: 1, LAM2: 1, LAM3: 1},
+            {LAM1: 1, LAM2: 1, LAM3: 1},
         ],
 
-        BATCH_SIZE: [5]
+        BATCH_SIZE: [3400],
+        EPOCHS: [500],
 
     }
 
     if 'neural' in argv:
-        test_all_models('neural_activation_gs_tests', data_params, model_params, viz=False, sklearn=False)
+        test_all_models('neural_prelu_CORE_log_softmax_tests', data_params, model_params, viz=False, sklearn=False)
     else:
         test_all_models('sklearn_svc2_tests', data_params, MODEL_PARAMS, viz=False, sklearn=True, normalize=True)
 

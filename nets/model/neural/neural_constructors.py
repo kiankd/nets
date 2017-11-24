@@ -16,6 +16,11 @@ def get_default_params(input_dim, num_classes, layer_dims, lr):
 
 def make_mlp(name, unique_labels, params):
     print(params)
-    mlp = basic_mlp.MLP(params)
+
+    if len(params[basic_mlp.DENSE_DIMS]) == 1:
+        mlp = basic_mlp.SLP(params)
+    else:
+        mlp = basic_mlp.TLP(params)
+
     model = neural_model.NeuralModel(name, mlp, params, unique_labels)
     return model

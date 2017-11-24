@@ -41,6 +41,12 @@ class NeuralModel(AbstractModel):
         else:
             self.core_loss_function = None
 
+        self.loss_presentations = [
+            CORECentroidLoss(1, 0, 0),
+            CORECentroidLoss(0, 1, 0),
+            CORECentroidLoss(0, 0, 1),
+        ]
+
         self.optimizer = optim.Adam(self.parameters(),
                                     lr=self.params[LEARNING_RATE],
                                     weight_decay=self.params[WEIGHT_DECAY])
@@ -81,23 +87,26 @@ class NeuralModel(AbstractModel):
         return self.model(samples)
 
     def predict(self, x):
-        preds = self.training_predict(x)
+        preds, reps = self.training_predict(x)
         preds = preds.data.type(torch.DoubleTensor).numpy()
-        return np.argmax(preds, axis=1)
+        return np.argmax(preds, axis=1), reps
 
     def predict_with_stats(self, x, gold, cuda=True):
-        preds = self.training_predict(x)
-        golds = self.prepare_labels(gold, cuda=cuda, evalu=True)
-        loss = self.cce_loss_function(preds, golds)
+        preds, reps = self.training_predict(x)
+        targets = self.prepare_labels(gold, cuda=cuda, evalu=True)
+        E = self.get_centroids(reps, gold, cuda)
+
+        losses = [self.cce_loss_function(preds, targets)]
+        losses += [core_loss(E, reps, gold, cuda) for core_loss in self.loss_presentations]
 
         preds = preds.data.type(torch.DoubleTensor).numpy()
-        golds = golds.data.type(torch.DoubleTensor).numpy()
+        targets = targets.data.type(torch.DoubleTensor).numpy()
 
         output = np.argmax(preds, axis=1)
 
         mean_pred_label_conf = np.mean(np.max(preds, axis=1)) # e.g., avg. conf for l=0 is 0.6, l=1 is 0.4
-        return loss, \
-               self.get_accuracy(output, golds), \
+        return losses, \
+               self.get_accuracy(output, targets), \
                dict(Counter(list(output))), \
                mean_pred_label_conf
 
@@ -115,16 +124,12 @@ class NeuralModel(AbstractModel):
         targets = self.prepare_labels(y, cuda)
 
         # Step 3, feed forward, then backprop!
-        if len(self.core) > 0:
-            outputs, reprs = self.model(samples, get_rep=True)
-        else:
-            outputs = self.model(samples)
+        outputs, reprs = self.model(samples)
 
         loss = self.cce_loss_function(outputs, targets)
-
         if len(self.core) == 3: #h_representations, labels, k
             centroids = self.get_centroids(reprs, y, cuda)
-            core_loss = self.core_loss_function(centroids, reprs, y)
+            core_loss = self.core_loss_function(centroids, reprs, y, cuda)
             loss += core_loss
 
         loss.backward()
