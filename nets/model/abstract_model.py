@@ -31,7 +31,7 @@ class AbstractModel(object):
             for key,value in self.params.iteritems():
                 if not self.is_default_parameter(key, value) and \
                                 type(value) is not list:
-                    s.append('_{}{}'.format(key, value))
+                    s.append(f'_{key}{value}')
         except AttributeError:
             pass
         return ''.join(s)
@@ -43,7 +43,7 @@ class AbstractModel(object):
         """
         s = ['Model name: ', self.model_name, '\n']
         for key, value in self.params.iteritems():
-            s.append('\t{} : {}\n'.format(key, str(value)))
+            s.append(f'\t{key} : {str(value)}\n')
         s.append('\n')
         return ''.join(s)
 

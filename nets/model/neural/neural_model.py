@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 from nets import AbstractModel, util
 from nets.model.neural import clip_gradient
+from nets.model.neural.core_losses import CORECentroidLoss
 from collections import OrderedDict, Counter
 from torch.autograd import Variable
 
@@ -15,14 +16,31 @@ LOSS_FUN = 'loss'
 LEARNING_RATE = 'lr'
 CLIP_NORM = 'cn'
 WEIGHT_DECAY = 'decay'
+CORE = 'core'
+LAM1 = 'lam1'
+LAM2 = 'lam2'
+LAM3 = 'lam3'
+
 
 class NeuralModel(AbstractModel):
-    def __init__(self, name, torch_module, params):
+    def __init__(self, name, torch_module, params, unique_labels):
         super(NeuralModel, self).__init__(name, params)
         self.model = torch_module
         self.params = params
+        self.unique_labels = unique_labels
+
         self.lr = self.params[LEARNING_RATE]
-        self.loss_function = self.params[LOSS_FUN]()
+        self.cce_loss_function = self.params[LOSS_FUN]()
+
+        self.core = self.params[CORE]
+        if len(self.core) == 3:
+            self.core_loss_function = CORECentroidLoss(self.core[LAM1], self.core[LAM2], self.core[LAM3])
+        elif len(self.core) == 2:
+            #TODO: implement pairwise CORE.
+            pass
+        else:
+            self.core_loss_function = None
+
         self.optimizer = optim.Adam(self.parameters(),
                                     lr=self.params[LEARNING_RATE],
                                     weight_decay=self.params[WEIGHT_DECAY])
@@ -70,7 +88,7 @@ class NeuralModel(AbstractModel):
     def predict_with_stats(self, x, gold, cuda=True):
         preds = self.training_predict(x)
         golds = self.prepare_labels(gold, cuda=cuda, evalu=True)
-        loss = self.loss_function(preds, golds)
+        loss = self.cce_loss_function(preds, golds)
 
         preds = preds.data.type(torch.DoubleTensor).numpy()
         golds = golds.data.type(torch.DoubleTensor).numpy()
@@ -97,9 +115,18 @@ class NeuralModel(AbstractModel):
         targets = self.prepare_labels(y, cuda)
 
         # Step 3, feed forward, then backprop!
-        outputs = self.model(samples)
+        if len(self.core) > 0:
+            outputs, reprs = self.model(samples, get_rep=True)
+        else:
+            outputs = self.model(samples)
 
-        loss = self.loss_function(outputs, targets)
+        loss = self.cce_loss_function(outputs, targets)
+
+        if len(self.core) == 3: #h_representations, labels, k
+            centroids = self.get_centroids(reprs, y, cuda)
+            core_loss = self.core_loss_function(centroids, reprs, y)
+            loss += core_loss
+
         loss.backward()
 
         # Step 4 - optional grad clips
@@ -110,6 +137,16 @@ class NeuralModel(AbstractModel):
                     p.grad.mul_(coeff)
 
         self.optimizer.step()
+
+    def get_centroids(self, reps, labels, cuda):
+        centroids = []
+        for label in self.unique_labels:
+            idxs = torch.LongTensor(np.where(labels==label)[0])
+            if cuda:
+                idxs = idxs.cuda()
+            center = reps[idxs]
+            centroids.append(torch.mean(center, 0).view(-1)) # axis 0
+        return torch.stack(centroids)
 
     def get_w_norm(self):
         norm = 0

@@ -14,8 +14,8 @@ def get_default_params(input_dim, num_classes, layer_dims, lr):
         neural_model.CLIP_NORM: 0,
     }
 
-def make_mlp(name, params):
+def make_mlp(name, unique_labels, params):
     print(params)
     mlp = basic_mlp.MLP(params)
-    model = neural_model.NeuralModel(name, mlp, params)
+    model = neural_model.NeuralModel(name, mlp, params, unique_labels)
     return model

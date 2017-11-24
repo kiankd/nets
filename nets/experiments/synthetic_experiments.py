@@ -10,6 +10,7 @@ from nets import util
 from nets.model.abstract_model import AbstractModel
 from nets.model.sklearn_model import SKLearnModel
 from nets.model.neural.basic_mlp import DENSE_DIMS, ACTIVATION
+from nets.model.neural.neural_model import CORE, LAM1, LAM2, LAM3
 from nets.model.neural.neural_constructors import make_mlp, get_default_params
 from nets.dataset.classification import SyntheticDataset, AbstractClassificationDataset
 from nets.dataset.classification import synthetic_dataset as synth_params
@@ -34,11 +35,11 @@ _m = {
         # LogisticRegression(),
         # LogisticRegressionCV(),
     ],
-    'C': list(np.arange(0.1, 5, 0.1)) + [5],
-    'kernel': ['rbf', 'linear', 'sigmoid']
+    'C': list(np.arange(0.05, 1, 0.05)) + [1, 2, 3, 4, 5],
+    'kernel': ['rbf', 'linear']
 }
 MODEL_PARAMS = OrderedDict(sorted(_m.items(), key=lambda t: t[0]))
-
+BATCH_SIZE = 'bsz'
 RESULTS_HEADERS = [
     'train_acc',
     'val_acc',
@@ -66,14 +67,15 @@ def cv_test_model_on_data(model, data, k=5):
         preds.append((model.predict(xval), yval))
     return preds_golds
 
-def test_neural_model(model, dataset, bsz=5, learning_rate_decay=1, one_time=False):
+def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False):
     if model is None:
         nets_model = make_mlp(
-            name = 'Neural Model 1000-256-256-10_shuff',
-            input_dim = dataset.get_num_features(),
-            num_classes = dataset.get_num_classes(),
-            layer_dims = [256, 256],
-            lr = 1e-4,
+            'Neural Model 1000-256-256-10_shuff',
+            dataset.get_unique_labels(),
+            input_dim=dataset.get_num_features(),
+            num_classes=dataset.get_num_classes(),
+            layer_dims=[256, 256],
+            lr=1e-4,
         )
     else:
         nets_model = model
@@ -98,7 +100,7 @@ def test_neural_model(model, dataset, bsz=5, learning_rate_decay=1, one_time=Fal
             val_loss, val_accs, v_out_dist, v_mean_outs = \
                 nets_model.predict_with_stats(dataset.get_val_x(), dataset.get_val_y())
 
-            print('\nEpoch {} results:'.format(epoch))
+            print(f'\nEpoch {epoch} results:')
             # print('  Norm W    : {:>5}'.format(nets_model.get_w_norm()))
             # print('  Norm Grad : {:>5}'.format(nets_model.get_grad_norm()))
             print('  Train loss: {:>5}'.format(train_loss.data[0]))
@@ -142,7 +144,7 @@ def test_neural_model(model, dataset, bsz=5, learning_rate_decay=1, one_time=Fal
             '.txt',
         ])
 
-        util.results_write('synthetic_results/' + res_name, [tr_res, v_res, te_res])
+        util.results_write(f'synthetic_results/{res_name}', [tr_res, v_res, te_res])
 
     return trainp, valp, testp
 
@@ -183,24 +185,28 @@ def iter_all_models(model_params, dataset, sklearn=True):
             # print(n_params)
             yield make_mlp(
                 name=util.params_to_str({**grid_params}),
+                unique_labels=dataset.get_unique_labels(),
                 params=n_params,
             )
 
-def test_all_models(results_out, data_params, model_params, sklearn=False, viz=False):
-    exp = Experimenter('synthetic_results/' + results_out,
+def test_all_models(results_out, data_params, model_params, sklearn=False, viz=False, normalize=False):
+    exp = Experimenter(f'synthetic_results/{results_out}',
                        list(data_params.keys()),
                        [MODEL_START_KEY] + list(model_params.keys()) + RESULTS_HEADERS)
 
     for d in iter_all_datasets(data_params):
         if viz:
-            d.visualize_data(util.str_to_save_name(d.name) + '/')
+            d.visualize_data(f'{util.str_to_save_name(d.name)}/')
+
+        if normalize:
+            d.get_normalized_data(reset_internals=True)
 
         for model in iter_all_models(model_params, d, sklearn=sklearn):
             print('\n\n-----------------------------------')
-            print('Testing model {} on {}...'.format(model.get_full_name(), d.name))
+            print(f'Testing model {model.get_full_name()} on {d.name}...')
 
             if not sklearn:
-                trainp, valp, testp = test_neural_model(model, d, bsz=5, one_time=False)
+                trainp, valp, testp = test_neural_model(model, d, model.params[BATCH_SIZE], one_time=False)
             else:
                 trainp, valp, testp = test_model_on_data(model, d, train=sklearn)
 
@@ -223,7 +229,7 @@ def test_all_models(results_out, data_params, model_params, sklearn=False, viz=F
                 '.txt',
             ])
 
-            util.results_write('synthetic_results/' + res_name, [tr_res, v_res, te_res])
+            util.results_write(f'synthetic_results/{res_name}', [tr_res, v_res, te_res])
         exp.serialize()
 
 if __name__ == '__main__':
@@ -236,28 +242,48 @@ if __name__ == '__main__':
     model_params = {
         ACTIVATION: [
             torch.nn.ReLU,
-            torch.nn.Tanh,
+            torch.nn.PReLU,
+            torch.nn.ReLU6,
+            torch.nn.LeakyReLU,
+            torch.nn.ELU,
+            # torch.nn.Tanh,
         ],
 
         DENSE_DIMS: [
-            [128],
+            # [128],
             [256],
-            [64, 64],
-            [128, 128],
-            [256, 128],
-            [128, 256],
+            # [64, 64],
+            # [128, 128],
+            # [256, 128],
+            # [128, 256],
             [256, 256],
-            [128, 64, 128],
-            [256, 128, 256],
-            [128, 128, 128],
-            [64, 128, 64],
-        ]
+            # [128, 64, 128],
+            # [256, 128, 256],
+            # [128, 128, 128],
+            # [64, 128, 64],
+            [32, 32, 32],
+            [32, 32, 32, 32],
+            [32, 32, 32, 32, 32],
+        ],
+
+        CORE: [
+            {}
+            # {LAM1: 1, LAM2: 0, LAM3: 0},
+            # {LAM1: 0, LAM2: 1, LAM3: 0},
+            # {LAM1: 0, LAM2: 0, LAM3: 1},
+            # {LAM1: 1, LAM2: 0, LAM3: 1},
+            # {LAM1: 1, LAM2: 1, LAM3: 0},
+            # {LAM1: 1, LAM2: 1, LAM3: 1},
+        ],
+
+        BATCH_SIZE: [5]
+
     }
 
     if 'neural' in argv:
-        test_all_models('neural_gs_tests', data_params, model_params, viz=False, sklearn=False)
+        test_all_models('neural_activation_gs_tests', data_params, model_params, viz=False, sklearn=False)
     else:
-        test_all_models('sklearn_svc_tests', data_params, MODEL_PARAMS, viz=False, sklearn=True)
+        test_all_models('sklearn_svc2_tests', data_params, MODEL_PARAMS, viz=False, sklearn=True, normalize=True)
 
 
     # exp = Experimenter.load_results('synthetic_results/sklearn_exps.tsv')

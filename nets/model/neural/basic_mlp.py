@@ -6,32 +6,51 @@ INPUT_DIM = 'input_dim'
 DENSE_DIMS = 'dense_layers'
 ACTIVATION = 'activation'
 NUM_CLASSES = 'num_classes'
+REPRESENTATION_LAYER = 'rep_layer'
 
 class MLP(nn.Module):
     def __init__(self, params):
         super(MLP, self).__init__()
         self.params = params
 
-        layers = [('dense1', nn.Linear(params[INPUT_DIM], params[DENSE_DIMS][0])),
-                  ('nonlin1', params[ACTIVATION]())]
-        for i in range(1, len(params[DENSE_DIMS])):
+        # set to last hidden layer if not specified
+        if not REPRESENTATION_LAYER in self.params:
+            self.params[REPRESENTATION_LAYER] = len(self.params[DENSE_DIMS])-1
+
+        # First hidden layer (assuming we have at least 1 hidden layer).
+        layers = [nn.Linear(self.params[INPUT_DIM], self.params[DENSE_DIMS][0]),
+                  self.params[ACTIVATION]()]
+        if len(self.params[DENSE_DIMS]) == 1:
+            self.params[REPRESENTATION_LAYER] = len(layers)
+
+        # Iterate to make an arbitrary number of layers (probs will only be 2 or 3).
+        for i in range(1, len(self.params[DENSE_DIMS])):
             layers.append(
-                ('dense{}'.format(i+1),
-                nn.Linear(params[DENSE_DIMS][i-1], params[DENSE_DIMS][i]))
+                nn.Linear(self.params[DENSE_DIMS][i-1], self.params[DENSE_DIMS][i])
             )
             layers.append(
-                ('nonlin{}'.format(i+1),
-                 params[ACTIVATION]()) # initiate activation function
+                 self.params[ACTIVATION]() # initiate activation function
             )
 
+            # Below we are indexing our representation layer, this is because
+            # the index that is passed won't correspond directly to the sequential
+            # layers ordering since nonlinearities and input count as layers.
+            if i == self.params[REPRESENTATION_LAYER]:
+                self.params[REPRESENTATION_LAYER] = len(layers)
+
+        # Output layer, softmax.
         layers.append(
-            ('dense_end',
-             nn.Linear(params[DENSE_DIMS][-1], params[NUM_CLASSES]))
+             nn.Linear(self.params[DENSE_DIMS][-1], self.params[NUM_CLASSES])
         )
-        layers.append(('softmax', nn.Softmax()))
+        layers.append(nn.Softmax())
 
-        self.layers = nn.Sequential(OrderedDict(layers))
+        # Construct the final sequence.
+        self.layers = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, get_rep=False):
+        if get_rep:
+            output = self.layers(x) # feed forward
+            cut_model = nn.Sequential(*list(self.layers.children())[:self.params[REPRESENTATION_LAYER]])
+            return output, cut_model(x)
         return self.layers(x)
 

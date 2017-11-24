@@ -1,3 +1,4 @@
+import numpy as np
 from abc import ABCMeta, abstractmethod
 from nets import AbstractDataset
 from sklearn.metrics import classification_report, precision_recall_fscore_support
@@ -12,6 +13,9 @@ class AbstractClassificationDataset(AbstractDataset):
     @abstractmethod
     def get_num_classes(self):
         pass
+
+    def get_unique_labels(self):
+        return np.unique(self.get_train_y())
 
     # Overriding abstract method
     def evaluate(self, gold, predictions):

@@ -140,7 +140,7 @@ class AbstractDataset(object):
 
         fold = 1
         for train_idx, val_idx in kf.split(x):
-            if verbose: print('Currently testing fold {}...'.format(fold))
+            if verbose: print(f'Currently testing fold {fold}...')
             x_train = x[train_idx]
             x_val = x[val_idx]
 
@@ -202,8 +202,7 @@ class AbstractDataset(object):
         :return: string - a string of our results.
         """
         assert len(gold) == len(predictions),\
-            'Different number of samples than predictions! {} vs {}'\
-                .format(len(gold), len(predictions))
+            f'Different number of samples than predictions! {len(gold)} vs {len(predictions)}'
 
     def _results_analysis(self, model, data_subset_name, gold, preds):
         """
@@ -278,8 +277,8 @@ class AbstractDataset(object):
     def __load_data(self, file_name):
         if file_name:
             x, y = self._load_data_from_file(file_name)
-            assert len(x) == len(y),'Different number of samples than labels!' \
-                                    ' {} vs {}'.format(len(x), len(y))
+            assert len(x) == len(y),f'Different number of samples than ' \
+                                    f'labels! {len(x)} vs {len(y)}'
             return x, y
         else:
             return None, None
@@ -433,11 +432,11 @@ class AbstractDataset(object):
         for label in np.unique(y):
             xx = x[y==label][:,0]
             xy = x[y==label][:,1]
-            ax.plot(xx, xy, label='Class {}'.format(label), markersize=3)
+            ax.plot(xx, xy, label=f'Class {label}', markersize=3)
 
         ax.set_xlim(axes[0], axes[1])
         ax.set_ylim(axes[2], axes[3])
-        ax.set_title('{}: {}'.format(self.name, set_name))
+        ax.set_title(f'{self.name}: {set_name}')
         ax.set_xlabel(u'PCA $x_1$')
         ax.set_ylabel(u'PCA $x_2$')
 
