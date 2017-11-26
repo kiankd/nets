@@ -44,7 +44,7 @@ class CORECentroidLoss(nn.Module):
 
             # mask matrix for the attractive and repulsive, n x k
             t = np.ones((n, k))
-            t *= (-self.lam2 / ((n - 1) * k))
+            t *= (-self.lam2 / ((n - 1) * k)) # TODO: determine that this should be n * (k-1)!
             t[np.arange(n), labels] = self.lam1 / n
             T = Variable(torch.from_numpy(t).float()).cuda()
 
