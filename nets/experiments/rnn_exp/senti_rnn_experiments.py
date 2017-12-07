@@ -4,9 +4,9 @@ sys.path.append('/home/ml/kkenyo1/nets')
 # TODO: fix this shit.
 
 from nets.dataset.classification.sentiment_dataset import SentimentDataset
-from nets.model.senti_birnn import SentiBiRNN
+from model.deprecated_rnns.senti_birnn import SentiBiRNN
 import torch
-import numpy as np
+
 
 def run_model_tests():
     # load data and get embedding

@@ -1,26 +1,38 @@
-from . import neural_model, basic_mlp
+from . import neural_model, basic_mlp, centroid_predictors
 from torch import nn
+from nets.util.constants import *
 
 
 def get_default_params(input_dim, num_classes, layer_dims, lr):
     return {
-        basic_mlp.INPUT_DIM: input_dim,
-        basic_mlp.NUM_CLASSES: num_classes,
-        basic_mlp.DENSE_DIMS: layer_dims,
-        basic_mlp.ACTIVATION: nn.ReLU,
-        neural_model.WEIGHT_DECAY: 0,
-        neural_model.LOSS_FUN: nn.CrossEntropyLoss,
-        neural_model.LEARNING_RATE: lr,
-        neural_model.CLIP_NORM: 0,
+        INPUT_DIM: input_dim,
+        NUM_CLASSES: num_classes,
+        DENSE_DIMS: layer_dims,
+        ACTIVATION: nn.ReLU,
+        WEIGHT_DECAY: 0,
+        LOSS_FUN: nn.CrossEntropyLoss,
+        LEARNING_RATE: lr,
+        CLIP_NORM: 0,
     }
 
 def make_mlp(name, unique_labels, params):
     print(params)
 
-    if len(params[basic_mlp.DENSE_DIMS]) == 1:
-        mlp = basic_mlp.SLP(params)
+    # TODO: improve these silly "if" statements.
+    if params[CORE]:
+        if len(params[DENSE_DIMS]) == 1:
+            mlp = centroid_predictors.CentroidSLP(params)
+        elif len(params[DENSE_DIMS]) == 2:
+            mlp = centroid_predictors.CentroidTLP(params)
+        else:
+            mlp = centroid_predictors.CentroidDNN(params)
     else:
-        mlp = basic_mlp.TLP(params)
+        if len(params[DENSE_DIMS]) == 1:
+            mlp = basic_mlp.SLP(params)
+        elif len(params[DENSE_DIMS]) == 2:
+            mlp = basic_mlp.TLP(params)
+        else:
+            mlp = basic_mlp.DMLP(params)
 
     model = neural_model.NeuralModel(name, mlp, params, unique_labels)
     return model

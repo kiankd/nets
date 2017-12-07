@@ -14,7 +14,8 @@ from nets.model.neural.neural_model import CORE, LAM1, LAM2, LAM3, LOSS_FUN
 from nets.model.neural.neural_constructors import make_mlp, get_default_params
 from nets.dataset.classification import SyntheticDataset, AbstractClassificationDataset
 from nets.dataset.classification import synthetic_dataset as synth_params
-from nets.util.experimenter import Experimenter, MODEL_START_KEY
+from nets.util.constants import *
+from nets.util.experimenter import Experimenter
 from sklearn.svm import LinearSVC, SVC
 from sklearn.cluster import KMeans
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
@@ -39,13 +40,11 @@ _m = {
     'kernel': ['rbf', 'linear']
 }
 MODEL_PARAMS = OrderedDict(sorted(_m.items(), key=lambda t: t[0]))
-BATCH_SIZE = 'bsz'
 RESULTS_HEADERS = [
     'train_acc',
     'val_acc',
     'test_acc',
 ]
-EPOCHS = 'epochs'
 
 # specific testing
 def test_model_on_data(model, data, train=True):
@@ -68,7 +67,7 @@ def cv_test_model_on_data(model, data, k=5):
         preds.append((model.predict(xval), yval))
     return preds_golds
 
-def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False):
+def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False, only_accs=False):
     if model is None:
         nets_model = make_mlp(
             'Neural Model 1000-256-256-10_shuff',
@@ -88,6 +87,7 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
     print('Model graph:')
     print(nets_model.model)
 
+    best_epoch = -1
     best_val_acc = 0
     best_preds = []
 
@@ -95,26 +95,31 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
     i = -1
     for samples, labels, epoch in dataset.iterate_train_minibatches(batch_size=bsz, epochs=model.params[EPOCHS], shuffle=True):
         if epoch > i:
-            train_losses, train_accs, t_out_dist, t_mean_outs = \
-                nets_model.predict_with_stats(dataset.get_train_x(), dataset.get_train_y())
-
-            val_losses, val_accs, v_out_dist, v_mean_outs = \
-                nets_model.predict_with_stats(dataset.get_val_x(), dataset.get_val_y())
-
             print(f'\nEpoch {epoch} results:')
-            print('  Norm W    : {:>5}'.format(nets_model.get_w_norm()))
-            print('  Norm Grad : {:>5}'.format(nets_model.get_grad_norm()))
 
-            loss_idx = 1
-            loss_names = {1: 'CCE (want to minimize to 0)',
-                          2: 'Attractive Sample-to-Centroid (want to minimize to 0) cosine distance',
-                          3: 'Repulsive Sample-to-Centroid (want to maximize to +1) cosine distance',
-                          4: 'Centroid-to-Centroid Repulsive (want to maximize to +1) cosine distance'}
-            for tloss, vloss in zip(train_losses, val_losses):
-                print('  {}:'.format(loss_names[loss_idx]))
-                print('    Train: {:>5}'.format(tloss.data[0] * (-1 if loss_idx > 2 else 1)))
-                print('    Val  : {:>5}'.format(vloss.data[0] * (-1 if loss_idx > 2 else 1)))
-                loss_idx += 1
+            if only_accs and epoch > 0:
+                train_accs = nets_model.fast_acc_pred(dataset.get_train_x(), dataset.get_train_y())
+                val_accs = nets_model.fast_acc_pred(dataset.get_val_x(), dataset.get_val_y())
+            else:
+                train_losses, train_accs, t_out_dist, t_mean_outs = \
+                    nets_model.predict_with_stats(dataset.get_train_x(), dataset.get_train_y())
+
+                val_losses, val_accs, v_out_dist, v_mean_outs = \
+                    nets_model.predict_with_stats(dataset.get_val_x(), dataset.get_val_y())
+
+                print('  Norm W    : {:>5}'.format(nets_model.get_w_norm()))
+                print('  Norm Grad : {:>5}'.format(nets_model.get_grad_norm()))
+
+                loss_idx = 1
+                loss_names = {1: 'CCE (want to minimize to 0)',
+                              2: 'Attractive Sample-to-Centroid (want to minimize to 0) cosine distance',
+                              3: 'Repulsive Sample-to-Centroid (want to maximize to +1) cosine distance',
+                              4: 'Centroid-to-Centroid Repulsive (want to maximize to +1) cosine distance'}
+                for tloss, vloss in zip(train_losses, val_losses):
+                    print('  {}:'.format(loss_names[loss_idx]))
+                    print('    Train: {:>5}'.format(tloss.data[0] * (-1 if loss_idx > 2 else 1)))
+                    print('    Val  : {:>5}'.format(vloss.data[0] * (-1 if loss_idx > 2 else 1)))
+                    loss_idx += 1
 
             print('  Train Accuracies:')
             for name, acc in train_accs:
@@ -129,6 +134,7 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
                 if acc > best_val_acc:
                     best_val_acc = acc
                     best_preds = test_model_on_data(nets_model, dataset, train=False)
+                    best_epoch = epoch
 
             # print('    Out dist  :  {}'.format(v_out_dist))
             # print('    Mean conf :  {}'.format(v_mean_outs))
@@ -137,6 +143,7 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
 
         nets_model.train(samples, labels)
 
+    print(f'\n{nets_model.model_name}\n---------\n  BEST EPOCH: {best_epoch}.\n  VAL-ACC: {best_val_acc}--------\n')
     trainp, trainreps = best_preds[0]
     valp, valreps = best_preds[1]
     testp, testreps = best_preds[2]
@@ -199,7 +206,7 @@ def iter_all_models(model_params, dataset, sklearn=True):
                 params=n_params,
             )
 
-def test_all_models(results_out, data_params, model_params, sklearn=False, viz=False, normalize=False):
+def test_all_models(results_out, data_params, model_params, sklearn=False, viz=False, normalize=False, fast=False, outdir=''):
     exp = Experimenter(f'synthetic_results/{results_out}',
                        list(data_params.keys()),
                        [MODEL_START_KEY] + list(model_params.keys()) + RESULTS_HEADERS)
@@ -216,7 +223,7 @@ def test_all_models(results_out, data_params, model_params, sklearn=False, viz=F
             print(f'Testing model {model.get_full_name()} on {d.name}...')
 
             if not sklearn:
-                trainp, valp, testp = test_neural_model(model, d, model.params[BATCH_SIZE], one_time=False)
+                trainp, valp, testp = test_neural_model(model, d, model.params[BATCH_SIZE], one_time=False, only_accs=fast)
             else:
                 trainp, valp, testp = test_model_on_data(model, d, train=sklearn)
 
@@ -239,7 +246,7 @@ def test_all_models(results_out, data_params, model_params, sklearn=False, viz=F
                 '.txt',
             ])
 
-            util.results_write(f'synthetic_results/{res_name}', [tr_res, v_res, te_res])
+            util.results_write(f'synthetic_results/{outdir}{res_name}', [tr_res, v_res, te_res])
         exp.serialize()
 
 if __name__ == '__main__':
@@ -250,41 +257,68 @@ if __name__ == '__main__':
     }
 
     model_params = {
+        LEARNING_RATE: [
+            # 0.00075,
+            0.00065,
+            0.0005,
+            0.0001,
+        ],
+
         ACTIVATION: [
-            torch.nn.ReLU,
-            # torch.nn.PReLU,
-            # torch.nn.ReLU6,
-            # torch.nn.LeakyReLU,
-            # torch.nn.ELU,
-            # torch.nn.Tanh,
+            torch.nn.LeakyReLU,
+            # lambda: torch.nn.LeakyReLU(0.5),
+            # lambda: torch.nn.LeakyReLU(0.4),
+            # lambda: torch.nn.LeakyReLU(0.3),
+            # lambda: torch.nn.LeakyReLU(0.2),
+            lambda: torch.nn.LeakyReLU(0.1),
+            # lambda: torch.nn.LeakyReLU(0.01),
+            # lambda: torch.nn.LeakyReLU(0.001),
+            torch.nn.ELU,
+            torch.nn.PReLU,
         ],
 
         DENSE_DIMS: [
-            # [128],
-            [256],
-            [512],
-            [128, 128],
-            [256, 256],
+            [2048, 1024],
+            [1024, 2048],
+
             [512, 512],
+            [1024, 1024],
+            [2048, 2048],
+
+            # [2048, 64, 1024],
+            # [2048, 64, 2048],
+            # [2048, 64, 4096],
+            #
+            # [2048, 128, 1024],
+            # [2048, 128, 2048],
+            # [2048, 128, 4096],
+
+            [2048, 256, 1024],
+            [2048, 256, 2048],
+            [2048, 256, 4096],
+
+            [2048, 512, 1024],
+            [2048, 512, 2048],
+            [2048, 512, 4096],
+
+            [2048, 1024, 512],
+            [2048, 1024, 1024],
+            [2048, 2048, 1024],
+            [2048, 2048, 2048],
         ],
 
         CORE: [
-            # {},
-            # {LAM1: 1, LAM2: 0, LAM3: 0},
-            # {LAM1: 0, LAM2: 1, LAM3: 0},
-            {LAM1: 0, LAM2: 0, LAM3: 1},
-            # {LAM1: 1, LAM2: 0, LAM3: 1},
+            {},
             # {LAM1: 1, LAM2: 1, LAM3: 0},
-            {LAM1: 1, LAM2: 1, LAM3: 1},
         ],
 
-        BATCH_SIZE: [3400],
-        EPOCHS: [500],
+        BATCH_SIZE: [100],
+        EPOCHS: [80],
 
     }
 
     if 'neural' in argv:
-        test_all_models('neural_prelu_CORE_log_softmax_tests', data_params, model_params, viz=False, sklearn=False)
+        test_all_models('neural_ff_tests2', data_params, model_params, viz=False, sklearn=False, fast=True, outdir='ff_tests2/')
     else:
         test_all_models('sklearn_svc2_tests', data_params, MODEL_PARAMS, viz=False, sklearn=True, normalize=True)
 

@@ -18,24 +18,24 @@ def test_model():
 
     norm_train_x, norm_val_x, _ = d.get_normalized_data(get_test=False)
     for model in [lr, linsvc, svc]:
-        print 'Training model {}...'.format(model.model_name)
+        print('Training model {}...'.format(model.model_name))
         model.train(train_x, train_y)
         val_pred = model.predict(val_x)
         # p,r,f1 = d.evaluate_val_predictions(val_pred)
         # print("  val recall:\t\t\t{:.3f}".format(r))
         # print("  val precision:\t\t{:.3f}".format(p))
         # print("  val f1:\t\t\t\t{:.3f}".format(f1))
-        print d.val_results_analysis(model.model_name, val_pred)
+        print(d.val_results_analysis(model.model_name, val_pred))
 
-        print '\nTraining model {} on normalized data...'.format(model.model_name)
+        print('\nTraining model {} on normalized data...'.format(model.model_name))
         model.train(norm_train_x, train_y)
         val_pred = model.predict(norm_val_x)
         # p, r, f1 = d.evaluate_val_predictions(val_pred)
         # print("  val recall:\t\t\t{:.3f}".format(r))
         # print("  val precision:\t\t{:.3f}".format(p))
         # print("  val f1:\t\t\t\t{:.3f}".format(f1))
-        print d.val_results_analysis(model.model_name, val_pred)
-        print '\n'
+        print(d.val_results_analysis(model.model_name, val_pred))
+        print('\n')
 
 if __name__ == '__main__':
     test_model()

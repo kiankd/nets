@@ -1,12 +1,6 @@
 import torch
 import torch.nn as nn
-from collections import OrderedDict
-
-INPUT_DIM = 'input_dim'
-DENSE_DIMS = 'dense_layers'
-ACTIVATION = 'activation'
-NUM_CLASSES = 'num_classes'
-REPRESENTATION_LAYER = 'rep_layer'
+from nets.util.constants import *
 
 def has_core(param_d):
     return len(param_d['core']) > 0
@@ -54,3 +48,25 @@ class TLP(nn.Module):
             h2_repr = self.activation2(self.h1_to_h2(h1_repr))
         predictions = self.softmax(self.h2_to_output(h2_repr))
         return predictions, h1_repr
+
+class DMLP(nn.Module):
+    """
+    N-layer perceptron.
+    """
+    def __init__(self, params):
+        super(DMLP, self).__init__()
+        self.params = params
+        input_to_h1 = nn.Linear(self.params[INPUT_DIM], self.params[DENSE_DIMS][0])
+        activation1 = self.params[ACTIVATION]()
+        sequence = [input_to_h1, activation1]
+        prev_dim = self.params[DENSE_DIMS][0]
+        for next_dim in self.params[DENSE_DIMS][1:]:
+            sequence.append(nn.Linear(prev_dim, next_dim))
+            sequence.append(self.params[ACTIVATION]())
+            prev_dim = next_dim
+        self.all_layers = nn.Sequential(*sequence)
+        self.output = nn.LogSoftmax()
+
+    def forward(self, x):
+        representation = self.all_layers(x)
+        return self.output(representation), representation

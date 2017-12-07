@@ -2,6 +2,8 @@
 import numpy as np
 import os
 import errno
+import types
+from copy import deepcopy
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 
 multi_class_f1 = lambda gold, pred: f1_score(gold, pred, average='weighted')
@@ -32,17 +34,25 @@ def str_to_save_name(string):
     string = string.replace('.', 'e')
     return string.lower().replace(' ', '_')
 
+def function_to_str(val):
+    if type(val) == types.FunctionType:
+        return str(deepcopy(val)())
+    return val
+
 def val_to_str(val):
     if type(val) is list:
         s = '-'.join(map(str, val))
     elif type(val) is dict:
         s = '-'.join(f'{k}_{v}' for k, v in val.items())
+    elif type(val) == types.FunctionType:
+        s = function_to_str(val)
     else:
         try:
             s = val.__name__
         except AttributeError:
             s = str(val)
-    s = s.split('(')[0]
+    if not type(val) == types.FunctionType:
+        s = s.split('(')[0]
     s.replace(' ', '_')
     s.replace('.', 'e')
     s.replace('\n', '')

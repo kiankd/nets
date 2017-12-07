@@ -6,20 +6,9 @@ import numpy as np
 from nets import AbstractModel, util
 from nets.model.neural import clip_gradient
 from nets.model.neural.core_losses import CORECentroidLoss
+from nets.util.constants import *
 from collections import OrderedDict, Counter
 from torch.autograd import Variable
-
-#######################
-## Parameter statics ##
-#######################
-LOSS_FUN = 'loss'
-LEARNING_RATE = 'lr'
-CLIP_NORM = 'cn'
-WEIGHT_DECAY = 'decay'
-CORE = 'core'
-LAM1 = 'lam1'
-LAM2 = 'lam2'
-LAM3 = 'lam3'
 
 
 class NeuralModel(AbstractModel):
@@ -64,14 +53,16 @@ class NeuralModel(AbstractModel):
 
     @staticmethod
     def prepare_labels(labels, cuda=True, evalu=False):
-        outs = Variable(torch.LongTensor(labels), volatile=evalu)
         if cuda:
-            return outs.cuda()
-        return outs
+            return Variable(torch.LongTensor(labels).cuda(), volatile=evalu)
+        return Variable(torch.LongTensor(labels), volatile=evalu)
 
     @staticmethod
     def get_accuracy(output, golds):
         return [(name, f(golds, output)) for name, f in util.iter_accs()]
+
+    def is_core_model(self):
+        return len(self.params[CORE]) == 3
 
     def parameters(self):
         return filter(lambda p: p.requires_grad, self.model.parameters())
@@ -91,7 +82,25 @@ class NeuralModel(AbstractModel):
         preds = preds.data.type(torch.DoubleTensor).numpy()
         return np.argmax(preds, axis=1), reps
 
+    def fast_acc_pred(self, x, gold, cuda=True):
+        preds, reps = self.training_predict(x)
+        targets = self.prepare_labels(gold, cuda=cuda, evalu=True)
+
+        preds = preds.data.type(torch.DoubleTensor).numpy()
+        targets = targets.data.type(torch.DoubleTensor).numpy()
+
+        output = np.argmax(preds, axis=1)
+        return self.get_accuracy(output, targets)
+
     def predict_with_stats(self, x, gold, cuda=True):
+        # this will only be called on the very first epoch before any training
+        if self.is_core_model():
+            if self.model.needs_centroids():
+                reps = self.model.get_reps(self.prepare_samples(x))
+                centroids = self.get_centroids(reps, gold, cuda)
+                centroids.detach()
+                self.model.update_centroids(centroids)
+
         preds, reps = self.training_predict(x)
         targets = self.prepare_labels(gold, cuda=cuda, evalu=True)
         E = self.get_centroids(reps, gold, cuda)
@@ -124,13 +133,15 @@ class NeuralModel(AbstractModel):
         targets = self.prepare_labels(y, cuda)
 
         # Step 3, feed forward, then backprop!
-        outputs, reprs = self.model(samples)
-
-        loss = self.cce_loss_function(outputs, targets)
-        if len(self.core) == 3: #h_representations, labels, k
+        if self.is_core_model(): # h_representations, labels, k
+            reprs = self.model.get_reps(samples)
             centroids = self.get_centroids(reprs, y, cuda)
-            core_loss = self.core_loss_function(centroids, reprs, y, cuda)
-            loss += core_loss
+            centroids.detach()
+            self.model.update_centroids(centroids) # update our model with the current centroids
+            loss = self.core_loss_function(centroids, reprs, y, cuda)
+        else:
+            outputs, reprs = self.model(samples)
+            loss = self.cce_loss_function(outputs, targets)
 
         loss.backward()
 

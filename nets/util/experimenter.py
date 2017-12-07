@@ -1,9 +1,10 @@
 import csv
 from collections import defaultdict
+from nets.util.constants import MODEL_START_KEY
+from nets.util import function_to_str
 
 DELIMITER = '\t'
 SUFFIX = '.tsv'
-MODEL_START_KEY = 'MODEL_NAME'
 
 class Experimenter(object):
     def __init__(self, save_name, dataset_headers, model_headers):
@@ -21,7 +22,7 @@ class Experimenter(object):
         self.check_res_formatting(dataset_params, model_params)
         for i, value in enumerate(dataset_params + model_params):
             param = self.idx_to_param[i]
-            self.param_to_val[param].append(value)
+            self.param_to_val[param].append(function_to_str(value)) # convert to str if function, else identity
 
     def check_res_formatting(self, dataset_params, model_params):
         assert(len(model_params) + len(dataset_params) == len(self.idx_to_param))
