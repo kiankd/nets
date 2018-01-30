@@ -67,19 +67,7 @@ def cv_test_model_on_data(model, data, k=5):
         preds.append((model.predict(xval), yval))
     return preds_golds
 
-def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False, only_accs=False):
-    if model is None:
-        nets_model = make_mlp(
-            'Neural Model 1000-256-256-10_shuff',
-            dataset.get_unique_labels(),
-            input_dim=dataset.get_num_features(),
-            num_classes=dataset.get_num_classes(),
-            layer_dims=[256, 256],
-            lr=1e-4,
-        )
-    else:
-        nets_model = model
-
+def test_neural_model(nets_model, dataset, bsz, learning_rate_decay=1, one_time=False, only_accs=False):
     print('GPU STATUS:')
     print(torch.cuda.is_available())
     nets_model.model.cuda()
@@ -91,24 +79,49 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
     best_val_acc = 0
     best_preds = []
 
+    tracking_results = []
+    centroids_over_time = []
+
     print('Testing minibatch iteration...')
     i = -1
-    for samples, labels, epoch in dataset.iterate_train_minibatches(batch_size=bsz, epochs=model.params[EPOCHS], shuffle=True):
+    for samples, labels, epoch in dataset.iterate_train_minibatches(batch_size=bsz, epochs=nets_model.params[EPOCHS], shuffle=True):
         if epoch > i:
-            print(f'\nEpoch {epoch} results:')
-
             if only_accs and epoch > 0:
                 train_accs = nets_model.fast_acc_pred(dataset.get_train_x(), dataset.get_train_y())
                 val_accs = nets_model.fast_acc_pred(dataset.get_val_x(), dataset.get_val_y())
             else:
-                train_losses, train_accs, t_out_dist, t_mean_outs = \
+                train_losses, train_accs, t_out_dist, t_mean_outs, t_repr_norm = \
                     nets_model.predict_with_stats(dataset.get_train_x(), dataset.get_train_y())
 
-                val_losses, val_accs, v_out_dist, v_mean_outs = \
+                val_losses, val_accs, v_out_dist, v_mean_outs, v_repr_norm = \
                     nets_model.predict_with_stats(dataset.get_val_x(), dataset.get_val_y())
 
-                print('  Norm W    : {:>5}'.format(nets_model.get_w_norm()))
-                print('  Norm Grad : {:>5}'.format(nets_model.get_grad_norm()))
+                # save results for tracking progress
+                centroids_over_time.append(nets_model.model.centroid_matrix.data.type(torch.DoubleTensor).numpy())
+
+                epoch_results = OrderedDict([
+                    (EPOCH, epoch),
+                    (WNORM, nets_model.get_w_norm()),
+                    (GNORM, nets_model.get_grad_norm()),
+                    (ANORM + TRAIN, t_repr_norm),
+                    (ANORM + VAL, v_repr_norm),
+                ])
+                loss_keys = (CCE_LOSS, ATT_SC_LOSS, REP_SC_LOSS, REP_CC_LOSS,)
+                for tloss, vloss, lkey in zip(train_losses, val_losses, loss_keys):
+                    epoch_results[lkey + TRAIN] = tloss.data[0]
+                    epoch_results[lkey + VAL] = vloss.data[0]
+
+                epoch_results[F1_ACC + TRAIN] = train_accs[F1_ACC]
+                epoch_results[F1_ACC + VAL] = val_accs[F1_ACC]
+
+                tracking_results.append(epoch_results)
+
+                print(f'\nEpoch {epoch} results:')
+
+                print('  Norm W    : {:>5}'.format(epoch_results[WNORM]))
+                print('  Norm Grad : {:>5}'.format(epoch_results[GNORM]))
+                print('  Norm Train Repr : {:>5}'.format(t_repr_norm))
+                print('  Norm Val Repr   : {:>5}'.format(v_repr_norm))
 
                 loss_idx = 1
                 loss_names = {1: 'CCE (want to minimize to 0)',
@@ -122,13 +135,13 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
                     loss_idx += 1
 
             print('  Train Accuracies:')
-            for name, acc in train_accs:
+            for name, acc in train_accs.items():
                 print('    {:<10}:  {:>5}'.format(name, acc))
             # print('    Out dist  :  {}'.format(t_out_dist))
             # print('    Mean conf :  {}'.format(t_mean_outs))
 
             print('  Val Accuracies:')
-            for name, acc in val_accs:
+            for name, acc in val_accs.items():
                 print('    {:<10}:  {:>5}'.format(name, acc))
 
                 if acc > best_val_acc:
@@ -163,12 +176,34 @@ def test_neural_model(model, dataset, bsz, learning_rate_decay=1, one_time=False
 
         util.results_write(f'synthetic_results/{res_name}', [tr_res, v_res, te_res])
 
-    return trainp, valp, testp
+    return trainp, valp, testp, tracking_results, centroids_over_time
 
 
 ################################
 ## global grid search testing ##
 ################################
+
+def init_nn_model(params, dataset):
+    n_params = get_default_params(
+        input_dim=dataset.get_num_features(),
+        num_classes=dataset.get_num_classes(),
+        layer_dims=params[DENSE_DIMS],
+        lr=0.5e-4,
+    )
+    for hyper in params:
+        n_params[hyper] = params[hyper]
+
+    # print(n_params)
+    return make_mlp(
+        name=util.params_to_str({**params}),
+        unique_labels=dataset.get_unique_labels(),
+        params=n_params,
+    )
+
+def init_dataset(params):
+    d = SyntheticDataset(util.params_to_str(params), params)
+    d.make_dataset()
+    return d
 
 def iter_all_datasets(data_params):
     keys = list(data_params.keys())
@@ -176,9 +211,7 @@ def iter_all_datasets(data_params):
 
     for param_vals in param_settings:
         params = {key: value for key, value in zip(keys, param_vals)}
-        d = SyntheticDataset(util.params_to_str(params), params)
-        d.make_dataset()
-        yield d
+        yield init_dataset(params)
 
 def iter_all_models(model_params, dataset, sklearn=True):
     keys = list(model_params.keys())
@@ -190,21 +223,7 @@ def iter_all_models(model_params, dataset, sklearn=True):
         if sklearn:
             yield SKLearnModel(util.params_to_str(grid_params), grid_params)
         else:
-            n_params = get_default_params(
-                input_dim=dataset.get_num_features(),
-                num_classes=dataset.get_num_classes(),
-                layer_dims=grid_params[DENSE_DIMS],
-                lr=0.5e-4,
-            )
-            for hyper in grid_params:
-                n_params[hyper] = grid_params[hyper]
-
-            # print(n_params)
-            yield make_mlp(
-                name=util.params_to_str({**grid_params}),
-                unique_labels=dataset.get_unique_labels(),
-                params=n_params,
-            )
+            yield init_nn_model(grid_params, dataset)
 
 def test_all_models(results_out, data_params, model_params, sklearn=False, viz=False, normalize=False, fast=False, outdir=''):
     exp = Experimenter(f'synthetic_results/{results_out}',
@@ -223,7 +242,7 @@ def test_all_models(results_out, data_params, model_params, sklearn=False, viz=F
             print(f'Testing model {model.get_full_name()} on {d.name}...')
 
             if not sklearn:
-                trainp, valp, testp = test_neural_model(model, d, model.params[BATCH_SIZE], one_time=False, only_accs=fast)
+                trainp, valp, testp, _, _ = test_neural_model(model, d, model.params[BATCH_SIZE], one_time=False, only_accs=fast)
             else:
                 trainp, valp, testp = test_model_on_data(model, d, train=sklearn)
 
@@ -249,6 +268,38 @@ def test_all_models(results_out, data_params, model_params, sklearn=False, viz=F
             util.results_write(f'synthetic_results/{outdir}{res_name}', [tr_res, v_res, te_res])
         exp.serialize()
 
+def track_model(data_params, nn_params, fprefix='', outdir=''):
+    dataset = init_dataset(data_params)
+    nn_model = init_nn_model(nn_params, dataset)
+
+    constant_headers = list(data_params.keys()) + list(model_params.keys())
+    constant_values = dataset.get_param_vals() + nn_model.get_param_vals(with_name=True, filtr=list(nn_params.keys()))
+    tracking_headers = [MODEL_START_KEY] + list(EXP_TRACKING)
+    exp = Experimenter(f'{outdir}{fprefix}_tracking_results', constant_headers, tracking_headers)
+
+    trp, valp, testp, tracking_results, epoch_centroids = test_neural_model(nn_model, dataset, bsz=nn_model.params[BATCH_SIZE])
+
+    np.save(f'{outdir}{fprefix}_centroids.npy', np.array(epoch_centroids))
+
+    for results_dict in tracking_results:
+        exp.add_result(constant_values, list(results_dict.values()))
+    exp.serialize()
+
+    # detailed results reports for each subset
+    tr_res = dataset.train_results_analysis(nn_model, trp)
+    v_res = dataset.val_results_analysis(nn_model, valp)
+    te_res = dataset.test_results_analysis(nn_model, testp)
+
+    res_name = ''.join([
+        util.str_to_save_name(dataset.name),
+        '_with_',
+        util.str_to_save_name(nn_model.model_name),
+        '.txt',
+    ])
+
+    util.results_write(f'{outdir}{res_name}', [tr_res, v_res, te_res])
+
+
 if __name__ == '__main__':
     data_params = {
         synth_params.DIFFICULTY: [synth_params.HARD],
@@ -258,67 +309,63 @@ if __name__ == '__main__':
 
     model_params = {
         LEARNING_RATE: [
-            # 0.00075,
+            # 0.0005,
             0.00065,
-            0.0005,
-            0.0001,
         ],
 
         ACTIVATION: [
-            torch.nn.LeakyReLU,
-            # lambda: torch.nn.LeakyReLU(0.5),
-            # lambda: torch.nn.LeakyReLU(0.4),
-            # lambda: torch.nn.LeakyReLU(0.3),
-            # lambda: torch.nn.LeakyReLU(0.2),
             lambda: torch.nn.LeakyReLU(0.1),
-            # lambda: torch.nn.LeakyReLU(0.01),
-            # lambda: torch.nn.LeakyReLU(0.001),
-            torch.nn.ELU,
-            torch.nn.PReLU,
         ],
 
         DENSE_DIMS: [
-            [2048, 1024],
-            [1024, 2048],
-
-            [512, 512],
-            [1024, 1024],
-            [2048, 2048],
-
-            # [2048, 64, 1024],
-            # [2048, 64, 2048],
-            # [2048, 64, 4096],
-            #
-            # [2048, 128, 1024],
-            # [2048, 128, 2048],
-            # [2048, 128, 4096],
-
-            [2048, 256, 1024],
-            [2048, 256, 2048],
             [2048, 256, 4096],
-
-            [2048, 512, 1024],
-            [2048, 512, 2048],
-            [2048, 512, 4096],
-
-            [2048, 1024, 512],
-            [2048, 1024, 1024],
-            [2048, 2048, 1024],
-            [2048, 2048, 2048],
+            # [2048, 512, 4096],
         ],
 
         CORE: [
-            {},
-            # {LAM1: 1, LAM2: 1, LAM3: 0},
+            # {},
+            {LAM1: 1, LAM2: 1, LAM3: 0},
         ],
 
-        BATCH_SIZE: [100],
-        EPOCHS: [80],
+        BATCH_SIZE: [
+            3400,
+            # 100,
+        ],
+        EPOCHS: [100],
 
     }
 
+
+    # results
+    final_d_params = {
+        synth_params.DIFFICULTY: synth_params.HARD,
+        synth_params.NUM_CLASSES: 10,
+        synth_params.MAKE_BLOBS: False,
+    }
+
+    best_corenet_params = {
+        LEARNING_RATE: 0.00065,
+        ACTIVATION: lambda: torch.nn.LeakyReLU(0.1),
+        DENSE_DIMS: [2048, 256, 4096],
+        CORE: {LAM1: 1, LAM2: 1, LAM3: 0},
+        BATCH_SIZE: 3400,
+        EPOCHS: 100,
+    }
+
+    best_ffnet_params = {
+        LEARNING_RATE: 0.0005,
+        ACTIVATION: lambda: torch.nn.LeakyReLU(0.1),
+        DENSE_DIMS: [2048, 512, 4096],
+        CORE: {},
+        BATCH_SIZE: 100,
+        EPOCHS: 100,
+    }
+
     if 'neural' in argv:
-        test_all_models('neural_ff_tests2', data_params, model_params, viz=False, sklearn=False, fast=True, outdir='ff_tests2/')
+        #test_all_models('final_tests', data_params, model_params, viz=False, sklearn=False, fast=False, outdir='final_tests/')
+        track_model(final_d_params, best_corenet_params, fprefix='best_corenet', outdir='synthetic_results/final_tests3/')
+        # track_model(final_d_params, best_ffnet_params, fprefix='best_ffnet', outdir='synthetic_results/final_tests2/')
+
     else:
         test_all_models('sklearn_svc2_tests', data_params, MODEL_PARAMS, viz=False, sklearn=True, normalize=True)
 

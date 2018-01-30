@@ -24,6 +24,14 @@ class Experimenter(object):
             param = self.idx_to_param[i]
             self.param_to_val[param].append(function_to_str(value)) # convert to str if function, else identity
 
+    def get_results(self, key, astype=None):
+        results = self.param_to_val[key]
+        if results[0] == 'No Grad...':
+            results[0] = 0
+        if astype is not None:
+            results = list(map(astype, results))
+        return results
+
     def check_res_formatting(self, dataset_params, model_params):
         assert(len(model_params) + len(dataset_params) == len(self.idx_to_param))
 

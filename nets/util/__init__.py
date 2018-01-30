@@ -5,13 +5,14 @@ import errno
 import types
 from copy import deepcopy
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
+from nets.util.constants import F1_ACC
 
 multi_class_f1 = lambda gold, pred: f1_score(gold, pred, average='weighted')
 
 def iter_accs():
     # yield recall_score
     # yield precision_score
-    yield 'F1 acc', multi_class_f1
+    yield F1_ACC, multi_class_f1
 
 def mse(true, pred):
     return np.mean((true - pred)**2)

@@ -59,7 +59,7 @@ class NeuralModel(AbstractModel):
 
     @staticmethod
     def get_accuracy(output, golds):
-        return [(name, f(golds, output)) for name, f in util.iter_accs()]
+        return {name: f(golds, output) for name, f in util.iter_accs()}
 
     def is_core_model(self):
         return len(self.params[CORE]) == 3
@@ -93,7 +93,7 @@ class NeuralModel(AbstractModel):
         return self.get_accuracy(output, targets)
 
     def predict_with_stats(self, x, gold, cuda=True):
-        # this will only be called on the very first epoch before any training
+        # this will only be called on the very first epoch before any training and will set the centroids
         if self.is_core_model():
             if self.model.needs_centroids():
                 reps = self.model.get_reps(self.prepare_samples(x))
@@ -103,7 +103,7 @@ class NeuralModel(AbstractModel):
 
         preds, reps = self.training_predict(x)
         targets = self.prepare_labels(gold, cuda=cuda, evalu=True)
-        E = self.get_centroids(reps, gold, cuda)
+        E = self.model.centroid_matrix #self.get_centroids(reps, gold, cuda)
 
         losses = [self.cce_loss_function(preds, targets)]
         losses += [core_loss(E, reps, gold, cuda) for core_loss in self.loss_presentations]
@@ -117,7 +117,8 @@ class NeuralModel(AbstractModel):
         return losses, \
                self.get_accuracy(output, targets), \
                dict(Counter(list(output))), \
-               mean_pred_label_conf
+               mean_pred_label_conf, \
+               torch.norm(reps.data) / len(reps)
 
     def train(self, x, y, cuda=True):
         """
@@ -180,3 +181,7 @@ class NeuralModel(AbstractModel):
         if norm == 0:
             return 'No Grad...'
         return norm
+
+    def get_activations_norm(self, x):
+        preds, reps = self.training_predict(x)
+        return torch.norm(reps) / len(reps)
